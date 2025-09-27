@@ -5,21 +5,20 @@ from io import BytesIO
 import matplotlib.pyplot as plt
 
 app = Flask(__name__)
-recommender = NutritionRecommender("dataset_clean.csv")
+recommender = NutritionRecommender("all_datas.csv")
 
 # -----------------------------
 # Analyse calories par catégorie
 # -----------------------------
 calories_avg = recommender.data.groupby("Food Category")["Calories"].mean().sort_values(ascending=False)
-
 print("Calories moyennes par catégorie :")
 print(calories_avg)
 
-print("\nDétails Fruits :")
-print(recommender.data[recommender.data["Food Category"]=="Fruits"][["Food Category","Meal Type","Calories"]])
-
-print("\nDétails Meat :")
-print(recommender.data[recommender.data["Food Category"]=="Meat"][["Food Category","Meal Type","Calories"]])
+# Détails Fruits et Meat
+for cat in ["Fruits", "Meat"]:
+    if cat in recommender.data["Food Category"].values:
+        print(f"\nDétails {cat} :")
+        print(recommender.data[recommender.data["Food Category"] == cat][["Food Category","Meal Type","Calories"]])
 
 # -----------------------------
 # Routes Flask
@@ -34,10 +33,11 @@ def index():
         food_name = request.form.get("food_name")
         meal_type = request.form.get("meal_type")
         recommendations = recommender.recommend(food_name, meal_type=meal_type)
+        print("Recommandations:", recommendations)  # debug console
         if recommendations:
             food_list = [food_name] + recommendations
             for class_name in recommender.classes.keys():
-                cols, values = recommender.get_nutrition_data(food_list, class_name, meal_type=meal_type)
+                cols, values = recommender.get_nutrition_data(food_list, class_name)
                 fig, ax = plt.subplots(figsize=(7,4))
                 bottom = [0]*len(food_list)
                 for i, nutrient_values in enumerate(zip(*values)):
