@@ -1,0 +1,31 @@
+<!-- templates/overview.html -->
+{% extends "base.html" %}
+{% block content %}
+<h2>⚡ Votre aperçu</h2>
+{% if user %}
+    <p>Profil enregistré : <strong>{{ user.goal }}</strong>, {{ user.sex }}, {{ user.weight }} kg, {{ user.height }} cm, {{ user.age }} ans</p>
+{% endif %}
+
+{% if tdee %}
+    <p>Besoin estimé : <strong>{{ tdee|round(0) }} kcal / jour</strong></p>
+    <h3>Répartition conseillée :</h3>
+    <ul>
+        {% for meal, val in targets.items() %}
+            <li>{{ meal }} : {{ val|round(0) }} kcal</li>
+        {% endfor %}
+    </ul>
+{% else %}
+    <p>Remplissez votre profil pour calculer vos besoins.</p>
+{% endif %}
+
+<h2>Analyser un aliment</h2>
+<form method="POST">
+    <label>Aliment de base :</label>
+    <select name="food_name" required>
+        {% for f in foods %}
+            <option value="{{ f }}">{{ f }}</option>
+        {% endfor %}
+    </select>
+    <button type="submit">Analyser et proposer</button>
+</form>
+{% endblock %}

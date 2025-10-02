@@ -1,15 +1,23 @@
+# model.py
 import pandas as pd
 import numpy as np
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.neighbors import NearestNeighbors
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, mean_squared_error
 
 class NutritionRecommender:
     def __init__(self, csv_path):
         self.data = pd.read_csv(csv_path)
-        # Colonnes nutritionnelles
+
+        # colonnes de données
+        # On garde Calories aussi pour certaines étapes
         self.nutrition_cols = ["Calories", "Protein", "Carbs", "Fat",
                                "Saturated Fat", "Fiber", "Sugar", "Sodium", "Water"]
-        # Classes pour graphiques
+
+        # catégories pour graphiques
         self.classes = {
             "Macronutrients": ["Calories", "Protein", "Carbs"],
             "Lipids": ["Fat", "Saturated Fat"],
@@ -17,60 +25,93 @@ class NutritionRecommender:
             "Minerals & Water": ["Sodium", "Water"]
         }
 
-        # Profil nutritionnel cible pour fitness homme moyen
-        self.target_profile = {
-            "Breakfast": np.array([500, 30, 60, 10, 2, 5, 20, 150, 100]),
-            "Lunch":     np.array([700, 40, 80, 15, 3, 7, 25, 200, 200]),
-            "Dinner":    np.array([700, 40, 80, 15, 3, 7, 25, 200, 200]),
-            "Snack":     np.array([250, 15, 30, 5, 1, 3, 15, 50, 50])
-        }
+        # entraîner les modèles
+        self.train_models()
 
-    def recommend(self, food_name, meal_type=None, n_neighbors=3):
-        df = self.data.copy()
+    def train_models(self):
+        # Decision Tree -> prédire Meal Type à partir des nutriments
+        X = self.data[self.nutrition_cols].values
+        y = self.data["Meal Type"].values
+        self.le_meal = LabelEncoder()
+        y_enc = self.le_meal.fit_transform(y)
 
-        if meal_type not in self.target_profile:
-            meal_type = "Dinner"
+        X_train, X_test, y_train, y_test = train_test_split(X, y_enc, test_size=0.2, random_state=42)
+        self.decision_tree = DecisionTreeClassifier(max_depth=6, random_state=42)
+        self.decision_tree.fit(X_train, y_train)
+        y_pred = self.decision_tree.predict(X_test)
+        print("Decision Tree Accuracy (Meal Type):", round(accuracy_score(y_test, y_pred), 3))
 
-        # Vérifier que l'aliment existe
-        if food_name not in df['Food Category'].values:
-            return []
+        # Linear Regression -> prédire Calories à partir des autres nutriments (sans Calories input)
+        # ici on utilise toutes les colonnes *sauf* Calories comme features
+        features = ["Protein", "Carbs", "Fat", "Saturated Fat", "Fiber", "Sugar", "Sodium", "Water"]
+        X_cal = self.data[features].values
+        y_cal = self.data["Calories"].values
+        X_train, X_test, y_train, y_test = train_test_split(X_cal, y_cal, test_size=0.2, random_state=42)
+        self.linear_reg = LinearRegression()
+        self.linear_reg.fit(X_train, y_train)
+        y_pred_cal = self.linear_reg.predict(X_test)
+        print("Linear Regression RMSE (Calories):", round(np.sqrt(mean_squared_error(y_test, y_pred_cal)), 3))
 
-        # Besoin restant pour le repas
-        target = self.target_profile[meal_type].copy()
-        row = df[df['Food Category'] == food_name][self.nutrition_cols].values[0]
-        remaining = target - row
-        remaining[remaining < 0] = 0  # éviter valeurs négatives
+        # KNN preparation (will use same features as Decision Tree for similarity)
+        self.scaler = StandardScaler()
+        self.scaler.fit(X)
 
-        # Préparer features
-        X = df[self.nutrition_cols].values
-        scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(X)
-        remaining_scaled = scaler.transform(remaining.reshape(1, -1))
+    # renvoie la liste complète des aliments (utile pour select)
+    def all_foods(self):
+        return list(self.data["Food Category"].unique())
 
-        # Pondération pour fitness : protéines et glucides plus importantes, graisses limitées
-        weights = np.ones(len(self.nutrition_cols))
-        weights[1] = 2.0  # Protein
-        weights[2] = 1.5  # Carbs
-        weights[3] = 0.5  # Fat
-        weights[4] = 0.5  # Saturated Fat
-        X_scaled_weighted = X_scaled * weights
-        remaining_scaled_weighted = remaining_scaled * weights
+    # pipeline complet pour un aliment de base -> prédiction meal_type, recommandations (knn), et estimation calories du combo
+    def pipeline(self, food_name, n_neighbors=3):
+        if food_name not in self.data["Food Category"].values:
+            return None, [], 0.0
 
-        # K-NN
-        knn = NearestNeighbors(n_neighbors=n_neighbors*2, metric='euclidean')  # *2 pour plus de diversité
-        knn.fit(X_scaled_weighted)
-        distances, indices = knn.kneighbors(remaining_scaled_weighted)
+        # récupérer vecteur nutrition pour l'aliment
+        row = self.data[self.data["Food Category"] == food_name][self.nutrition_cols].values[0]
 
-        recommended = []
-        for i in indices[0]:
-            candidate = df.iloc[i]['Food Category']
-            if candidate != food_name and candidate not in recommended:
-                recommended.append(candidate)
-            if len(recommended) >= n_neighbors:
+        # Decision Tree : prédire Meal Type
+        meal_pred = self.decision_tree.predict([row])[0]
+        meal_type = self.le_meal.inverse_transform([meal_pred])[0]
+
+        # KNN : recommander aliments proches
+        X = self.data[self.nutrition_cols].values
+        X_scaled = self.scaler.transform(X)
+        target_scaled = self.scaler.transform([row])
+        knn = NearestNeighbors(n_neighbors=n_neighbors+1, metric='euclidean')
+        knn.fit(X_scaled)
+        distances, indices = knn.kneighbors(target_scaled)
+        recommendations = []
+        for idx in indices[0]:
+            candidate = self.data.iloc[idx]["Food Category"]
+            if candidate != food_name and candidate not in recommendations:
+                recommendations.append(candidate)
+            if len(recommendations) >= n_neighbors:
                 break
 
-        return recommended
+        # Estimer calories pour chaque aliment listé (on utilise linear_reg.predict sur features sans 'Calories')
+        features = ["Protein", "Carbs", "Fat", "Saturated Fat", "Fiber", "Sugar", "Sodium", "Water"]
+        total_cal = 0.0
+        for f in [food_name] + recommendations:
+            r = self.data[self.data["Food Category"] == f]
+            if not r.empty:
+                vals = r[features].values[0]
+                pred_cal = float(self.linear_reg.predict([vals])[0])
+                total_cal += pred_cal
 
+        return meal_type, recommendations, float(total_cal)
+
+    # calcule la somme des calories (estimation LR) pour une liste d'aliments
+    def calories_for_list(self, food_list):
+        features = ["Protein", "Carbs", "Fat", "Saturated Fat", "Fiber", "Sugar", "Sodium", "Water"]
+        total = 0.0
+        for f in food_list:
+            r = self.data[self.data["Food Category"] == f]
+            if r.empty:
+                continue
+            vals = r[features].values[0]
+            total += float(self.linear_reg.predict([vals])[0])
+        return float(total)
+
+    # utile pour graphiques : renvoie cols et valeurs pour chaque aliment donné
     def get_nutrition_data(self, food_list, class_name):
         df = self.data.copy()
         cols = self.classes[class_name]
@@ -80,5 +121,5 @@ class NutritionRecommender:
             if len(row) == 0:
                 values.append([0]*len(cols))
             else:
-                values.append(row[0])
+                values.append(row[0].tolist())
         return cols, values

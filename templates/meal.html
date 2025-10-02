@@ -1,0 +1,64 @@
+<!-- templates/meal.html -->
+{% extends "base.html" %}
+{% block content %}
+<h2>🍽 Composer votre repas</h2>
+
+{% if cm.base_food %}
+    <p>Aliment de base : <strong>{{ cm.base_food }}</strong></p>
+{% endif %}
+
+<form method="POST">
+    <label>Type de repas (choisir ou garder la prédiction) :</label>
+    <select name="meal_type_select">
+        <option value="">-- Choisir --</option>
+        <option value="Breakfast" {% if cm.meal_type=='Breakfast' %}selected{% endif %}>Breakfast</option>
+        <option value="Lunch" {% if cm.meal_type=='Lunch' %}selected{% endif %}>Lunch</option>
+        <option value="Dinner" {% if cm.meal_type=='Dinner' %}selected{% endif %}>Dinner</option>
+        <option value="Snack" {% if cm.meal_type=='Snack' %}selected{% endif %}>Snack</option>
+    </select>
+    <button name="action" value="set_meal_type" type="submit">Valider type</button>
+    <button name="action" value="refresh_recs" type="submit">Réinitialiser recommandations</button>
+</form>
+
+<h3>Aliments sélectionnés</h3>
+{% if selected %}
+    <ul>
+        {% for s in selected %}
+            <li>
+                {{ s }}
+                <form style="display:inline" method="POST">
+                    <input type="hidden" name="remove_food_name" value="{{ s }}">
+                    <button name="action" value="remove_food" type="submit">Supprimer</button>
+                </form>
+            </li>
+        {% endfor %}
+    </ul>
+{% else %}
+    <p>Aucun aliment sélectionné.</p>
+{% endif %}
+
+<h3>Ajouter un aliment</h3>
+<form method="POST">
+    <select name="add_food_select">
+        {% for f in foods_all %}
+            <option value="{{ f }}">{{ f }}</option>
+        {% endfor %}
+    </select>
+    <button name="action" value="add_food" type="submit">Ajouter</button>
+</form>
+
+<h3>Résultats</h3>
+<p>Total estimé (calories) pour ce repas : <strong>{{ total_calories|round(2) }} kcal</strong></p>
+{% if target_for_meal %}
+    <p>Objectif pour ce type ({{ cm.meal_type }}): <strong>{{ target_for_meal|round(0) }} kcal</strong></p>
+    <p>{{ diff_message }}</p>
+{% endif %}
+
+{% if graphs %}
+    <h3>Graphiques nutritionnels</h3>
+    {% for g in graphs %}
+        <img src="data:image/png;base64,{{ g }}" class="graph">
+    {% endfor %}
+{% endif %}
+
+{% endblock %}
