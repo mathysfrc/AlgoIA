@@ -1,4 +1,3 @@
-<!-- templates/meal.html -->
 {% extends "base.html" %}
 {% block content %}
 <h2>🍽 Composer votre repas</h2>
@@ -17,7 +16,7 @@
         <option value="Snack" {% if cm.meal_type=='Snack' %}selected{% endif %}>Snack</option>
     </select>
     <button name="action" value="set_meal_type" type="submit">Valider type</button>
-    <button name="action" value="refresh_recs" type="submit">Réinitialiser recommandations</button>
+    <button name="action" value="refresh_recs" type="submit">Rafraîchir suggestions</button>
 </form>
 
 <h3>Aliments sélectionnés</h3>
@@ -46,6 +45,23 @@
     </select>
     <button name="action" value="add_food" type="submit">Ajouter</button>
 </form>
+
+<h3>Suggestions pour compléter le repas</h3>
+{% if suggestions %}
+    <ul>
+        {% for s in suggestions %}
+            <li>
+                {{ s }}
+                <form style="display:inline" method="POST">
+                    <input type="hidden" name="add_food_select" value="{{ s }}">
+                    <button name="action" value="add_food" type="submit">Ajouter</button>
+                </form>
+            </li>
+        {% endfor %}
+    </ul>
+{% else %}
+    <p>Aucune suggestion disponible.</p>
+{% endif %}
 
 <h3>Résultats</h3>
 <p>Total estimé (calories) pour ce repas : <strong>{{ total_calories|round(2) }} kcal</strong></p>

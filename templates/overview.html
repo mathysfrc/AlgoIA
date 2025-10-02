@@ -1,21 +1,22 @@
-<!-- templates/overview.html -->
 {% extends "base.html" %}
 {% block content %}
 <h2>⚡ Votre aperçu</h2>
 {% if user %}
-    <p>Profil enregistré : <strong>{{ user.goal }}</strong>, {{ user.sex }}, {{ user.weight }} kg, {{ user.height }} cm, {{ user.age }} ans</p>
+    <p>Profil : {{ user.sex }}, {{ user.age }} ans, {{ user.height }} cm</p>
+    <p>Poids actuel : <strong>{{ user.weight }} kg</strong> → Objectif : <strong>{{ user.target_weight }} kg</strong></p>
+    <p>Durée : {{ user.duration }} semaines — Entraînements : {{ user.workouts }}/semaine</p>
 {% endif %}
 
 {% if tdee %}
-    <p>Besoin estimé : <strong>{{ tdee|round(0) }} kcal / jour</strong></p>
+    <p>Apport recommandé : <strong>{{ tdee }} kcal / jour</strong></p>
     <h3>Répartition conseillée :</h3>
     <ul>
         {% for meal, val in targets.items() %}
-            <li>{{ meal }} : {{ val|round(0) }} kcal</li>
+            <li>{{ meal }} : {{ val }} kcal</li>
         {% endfor %}
     </ul>
 {% else %}
-    <p>Remplissez votre profil pour calculer vos besoins.</p>
+    <p>⚠️ Remplissez votre profil pour calculer vos besoins.</p>
 {% endif %}
 
 <h2>Analyser un aliment</h2>

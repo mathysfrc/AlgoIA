@@ -1,14 +1,7 @@
-<!-- templates/profile.html -->
 {% extends "base.html" %}
 {% block content %}
 <form method="POST">
     <h2>👤 Votre profil</h2>
-    <label>Objectif :</label>
-    <select name="goal" required>
-        <option value="lose">Perdre du poids</option>
-        <option value="maintain">Maintenir le poids</option>
-        <option value="gain">Prendre du poids</option>
-    </select>
 
     <label>Sexe :</label>
     <select name="sex" required>
@@ -16,14 +9,23 @@
         <option value="female">Femme</option>
     </select>
 
-    <label>Poids (kg) :</label>
+    <label>Poids actuel (kg) :</label>
     <input type="number" name="weight" step="0.1" required>
+
+    <label>Poids objectif (kg) :</label>
+    <input type="number" name="target_weight" step="0.1" required>
 
     <label>Taille (cm) :</label>
     <input type="number" name="height" required>
 
     <label>Âge :</label>
     <input type="number" name="age" required>
+
+    <label>Nombre d’entraînements/semaine :</label>
+    <input type="number" name="workouts" min="0" max="14" required>
+
+    <label>Durée pour atteindre l’objectif (semaines) :</label>
+    <input type="number" name="duration" min="1" required>
 
     <button type="submit">Enregistrer et voir overview</button>
 </form>
