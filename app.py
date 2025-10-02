@@ -140,6 +140,7 @@ def meal():
                 cm['selected_foods'].remove(rem)
         elif action == "refresh_recs":
             if cm.get('base_food'):
+                # --- utiliser pipeline classique pour MAJ suggestions de base
                 meal_pred, recs, total_cal = recommender.pipeline(cm['base_food'])
                 cm['meal_type'] = meal_pred
                 session['last_recs'] = recs
@@ -150,10 +151,20 @@ def meal():
     selected = cm.get('selected_foods', [])
     total_calories = recommender.calories_for_list(selected) if selected else 0.0
 
+    # objectif calorique pour ce repas
     target_for_meal = None
     if cm.get('meal_type') and cm['meal_type'] in targets:
         target_for_meal = targets[cm['meal_type']]
 
+    # Recommandations intelligentes (nouveau système)
+    smart_res = None
+    if target_for_meal and cm.get('base_food'):
+        smart_res = recommender.smart_recommendations(
+            base_food=cm['base_food'],
+            target_calories=target_for_meal
+        )
+
+    # Message de différence calories
     diff_message = ""
     if target_for_meal is not None:
         diff = total_calories - target_for_meal
@@ -192,7 +203,8 @@ def meal():
                            diff_message=diff_message,
                            graphs=graphs,
                            tdee=tdee,
-                           suggestions=suggestions)
+                           suggestions=suggestions,
+                           smart_res=smart_res)
 
 if __name__ == "__main__":
     app.run(debug=True)

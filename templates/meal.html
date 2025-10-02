@@ -46,7 +46,7 @@
     <button name="action" value="add_food" type="submit">Ajouter</button>
 </form>
 
-<h3>Suggestions pour compléter le repas</h3>
+<h3>Suggestions classiques (pipeline KNN)</h3>
 {% if suggestions %}
     <ul>
         {% for s in suggestions %}
@@ -61,6 +61,34 @@
     </ul>
 {% else %}
     <p>Aucune suggestion disponible.</p>
+{% endif %}
+
+<h3>Menu intelligent (objectif calorique)</h3>
+{% if smart_res %}
+    {% if smart_res.best %}
+        <p><strong>Menu proposé :</strong> {{ smart_res.best.foods|join(', ') }}
+        (≈ {{ smart_res.best.pred_cal|round(0) }} kcal)</p>
+
+        <form method="POST">
+            {% for f in smart_res.best.foods %}
+                <input type="hidden" name="add_food_select" value="{{ f }}">
+            {% endfor %}
+            <button name="action" value="add_food" type="submit">Ajouter tout ce menu</button>
+        </form>
+    {% endif %}
+
+    {% if smart_res.alternatives %}
+        <h4>Alternatives</h4>
+        <ul>
+            {% for alt in smart_res.alternatives %}
+                <li>
+                    {{ alt.foods|join(', ') }} (≈ {{ alt.pred_cal|round(0) }} kcal)
+                </li>
+            {% endfor %}
+        </ul>
+    {% endif %}
+{% else %}
+    <p>Aucune suggestion intelligente (objectif atteint ou manquant).</p>
 {% endif %}
 
 <h3>Résultats</h3>
