@@ -70,7 +70,8 @@ class NutritionRecommender:
             self.le_meal.fit(["Unknown"])
 
         # split et training decision tree (prédiction meal type)
-        X_train, X_test, y_train, y_test = train_test_split(X, y_enc, test_size=0.2, random_state=42)
+        # 70% learning set and 30% validation set
+        X_train, X_test, y_train, y_test = train_test_split(X, y_enc, test_size=0.3, random_state=42)
         self.decision_tree = DecisionTreeClassifier(max_depth=6, random_state=42)
         try:
             self.decision_tree.fit(X_train, y_train)
@@ -86,7 +87,8 @@ class NutritionRecommender:
         features_no_cal = ["Protein", "Carbs", "Fat", "Saturated Fat", "Fiber", "Sugar", "Sodium", "Water"]
         X_cal = self.data[features_no_cal].values
         y_cal = self.data["Calories"].values
-        X_train_c, X_test_c, y_train_c, y_test_c = train_test_split(X_cal, y_cal, test_size=0.2, random_state=42)
+        # 70% learning set and 30% validation set
+        X_train_c, X_test_c, y_train_c, y_test_c = train_test_split(X_cal, y_cal, test_size=0.3, random_state=42)
 
         self.linear_reg = LinearRegression()
         try:
