@@ -1,159 +1,249 @@
-/* =============================
-   Global Styles
-============================= */
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600&family=Poppins:wght@300;400;500&display=swap');
+
+/* === RESET === */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
 body {
-    font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    background: #f8fafc;
-    color: #333;
-    margin: 0;
-    padding: 0;
-    line-height: 1.6;
+  background: linear-gradient(135deg, #0a0f1a, #121b2d);
+  color: #e3e6ed;
+  font-family: 'Poppins', sans-serif;
+  line-height: 1.6;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  animation: fadeIn 0.8s ease;
 }
 
-.container {
-    max-width: 900px;
-    margin: 40px auto;
-    padding: 20px 30px;
-    background: #ffffff;
-    border-radius: 16px;
-    box-shadow: 0 6px 16px rgba(0,0,0,0.08);
+/* === HEADER === */
+header {
+  background: rgba(10, 15, 25, 0.85);
+  border-bottom: 1px solid rgba(0, 255, 255, 0.2);
+  backdrop-filter: blur(10px);
+  padding: 1rem 2rem;
+  position: sticky;
+  top: 0;
+  z-index: 100;
 }
 
-/* =============================
-   Titles
-============================= */
-h1 {
-    text-align: center;
-    font-size: 2rem;
-    margin-bottom: 10px;
-    color: #2563eb; /* bleu fitness */
+header h1 {
+  font-family: 'Orbitron', sans-serif;
+  font-weight: 600;
+  color: #00f5d4;
+  letter-spacing: 1px;
+  font-size: 1.5rem;
+  text-shadow: 0 0 8px rgba(0, 255, 255, 0.3);
 }
 
-h2 {
-    margin-top: 25px;
-    font-size: 1.5rem;
-    color: #1e293b;
-}
-
-h3 {
-    margin-top: 20px;
-    font-size: 1.2rem;
-    color: #475569;
-}
-
-/* =============================
-   Navigation
-============================= */
-nav {
-    text-align: center;
-    margin: 15px 0;
+.nav-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 nav a {
-    margin: 0 10px;
-    text-decoration: none;
-    font-weight: 500;
-    color: #334155;
-    transition: color 0.2s ease;
+  color: #cfd8dc;
+  text-decoration: none;
+  margin-left: 1.2rem;
+  font-weight: 400;
+  transition: color 0.3s, text-shadow 0.3s;
 }
 
 nav a:hover {
-    color: #2563eb;
+  color: #00f5d4;
+  text-shadow: 0 0 8px rgba(0, 255, 255, 0.4);
 }
 
-/* =============================
-   Forms & Inputs
-============================= */
-form {
-    margin: 15px 0 25px;
-    padding: 15px;
-    background: #f9fafb;
-    border-radius: 12px;
-    border: 1px solid #e2e8f0;
+/* === MAIN CONTENT === */
+.content {
+  flex: 1;
+  width: 90%;
+  max-width: 900px;
+  margin: 2rem auto;
+  animation: fadeIn 0.8s ease-in-out;
+}
+
+.page-title {
+  font-family: 'Orbitron', sans-serif;
+  color: #00f5d4;
+  font-size: 1.8rem;
+  margin-bottom: 1rem;
+  text-align: center;
+  text-shadow: 0 0 10px rgba(0, 255, 255, 0.3);
+}
+
+/* === CARD === */
+.card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(0, 255, 255, 0.1);
+  border-radius: 14px;
+  padding: 1.5rem 2rem;
+  margin-bottom: 1.5rem;
+  box-shadow: 0 0 15px rgba(0, 255, 255, 0.05);
+  backdrop-filter: blur(12px);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 0 20px rgba(0, 255, 255, 0.1);
+}
+
+/* === FORMS === */
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem 2rem;
 }
 
 label {
-    display: block;
-    font-weight: 500;
-    margin-top: 12px;
-    margin-bottom: 5px;
-    color: #334155;
+  font-weight: 400;
+  color: #b0bec5;
 }
 
 input, select {
-    width: 100%;
-    padding: 8px 10px;
-    margin-bottom: 10px;
-    border: 1px solid #cbd5e1;
-    border-radius: 8px;
-    font-size: 0.95rem;
-    background: #ffffff;
-    transition: border 0.2s ease;
+  background: rgba(255, 255, 255, 0.08);
+  color: #e3e6ed;
+  border: 1px solid rgba(0, 255, 255, 0.2);
+  border-radius: 8px;
+  padding: 0.5rem;
+  transition: border 0.3s, background 0.3s;
 }
 
 input:focus, select:focus {
-    outline: none;
-    border-color: #2563eb;
-    box-shadow: 0 0 0 2px rgba(37,99,235,0.2);
+  outline: none;
+  border: 1px solid #00f5d4;
+  background: rgba(0, 255, 255, 0.1);
 }
 
-button {
-    padding: 8px 16px;
-    margin: 5px 5px 0 0;
-    background: #2563eb;
-    border: none;
-    border-radius: 8px;
-    color: white;
-    font-size: 0.95rem;
-    cursor: pointer;
-    transition: background 0.2s ease;
+/* === BUTTONS === */
+.btn, button {
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-family: 'Poppins', sans-serif;
 }
 
-button:hover {
-    background: #1d4ed8;
+.btn-primary {
+  background: linear-gradient(90deg, #00f5d4, #00c2cb);
+  color: #0a0f1a;
+  font-weight: 500;
 }
 
-/* Boutons secondaires (par ex. supprimer) */
-button[value="remove_food"] {
-    background: #dc2626;
+.btn-primary:hover {
+  box-shadow: 0 0 12px rgba(0, 255, 255, 0.5);
 }
 
-button[value="remove_food"]:hover {
-    background: #b91c1c;
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.1);
+  color: #00f5d4;
 }
 
-/* =============================
-   Lists & Results
-============================= */
-ul {
-    padding-left: 20px;
-    margin-top: 8px;
+.btn-secondary:hover {
+  background: rgba(0, 255, 255, 0.15);
+  box-shadow: 0 0 10px rgba(0, 255, 255, 0.3);
 }
 
-ul li {
-    margin-bottom: 6px;
+.btn-add {
+  background: rgba(0, 255, 170, 0.1);
+  color: #00f5d4;
 }
 
-strong {
-    color: #111827;
+.btn-add:hover {
+  background: rgba(0, 255, 255, 0.2);
+}
+
+.btn-delete {
+  background: rgba(255, 100, 100, 0.1);
+  color: #ff7b7b;
+}
+
+.btn-delete:hover {
+  background: rgba(255, 100, 100, 0.2);
+}
+
+/* === LISTES === */
+.food-list, .suggestion-list, .alt-list {
+  list-style: none;
+  margin-top: 0.5rem;
+}
+
+.food-item, .suggestion-item, .alt-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(255,255,255,0.03);
+  padding: 0.4rem 0.8rem;
+  border-radius: 6px;
+  margin-bottom: 0.4rem;
+  transition: background 0.3s ease;
+}
+
+.food-item:hover, .suggestion-item:hover, .alt-item:hover {
+  background: rgba(0,255,255,0.07);
+}
+
+/* === PROGRESS BAR === */
+.progress-bar-wrapper {
+  background: rgba(255,255,255,0.08);
+  border-radius: 8px;
+  height: 10px;
+  margin-top: 0.5rem;
+  overflow: hidden;
+}
+
+.progress-bar {
+  background: linear-gradient(90deg, #00f5d4, #00c2cb);
+  height: 100%;
+  transition: width 0.5s ease-in-out;
+}
+
+/* === GRAPH === */
+.graphs-container {
+  display: grid;
+  gap: 1rem;
+  justify-items: center;
 }
 
 .graph {
-    display: block;
-    margin: 15px auto;
-    max-width: 100%;
-    border-radius: 12px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+  max-width: 100%;
+  border-radius: 10px;
+  box-shadow: 0 0 15px rgba(0,255,255,0.08);
+  transition: transform 0.3s ease;
 }
 
-/* =============================
-   Footer
-============================= */
+.graph:hover {
+  transform: scale(1.03);
+}
+
+/* === ANIMATIONS === */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in {
+  animation: fadeIn 0.8s ease forwards;
+}
+
+.pop-in {
+  animation: popIn 0.4s ease-out;
+}
+
+@keyframes popIn {
+  0% { transform: scale(0.95); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* === FOOTER === */
 footer {
-    margin-top: 40px;
-    text-align: center;
-    font-size: 0.9rem;
-    color: #64748b;
-    border-top: 1px solid #e2e8f0;
-    padding-top: 15px;
+  text-align: center;
+  font-size: 0.8rem;
+  color: #607d8b;
+  margin: 2rem 0;
 }

@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+    <h2>🔍 Analyse d’un aliment</h2>
+    <form method="POST">
+        <label>Choisissez un aliment :</label>
+        <select name="food_name" required>
+            {% for f in foods %}
+                <option value="{{ f }}">{{ f }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit" class="btn-primary">Analyser</button>
+    </form>
+
+    {% if base_food %}
+        <h3>Résultats :</h3>
+        <p>Aliment : <strong>{{ base_food }}</strong></p>
+        <p>Type de repas prédit : <strong>{{ meal_type }}</strong></p>
+        <h4>Suggestions similaires :</h4>
+        <ul>
+            {% for s in suggestions %}
+                <li>{{ s }}</li>
+            {% endfor %}
+        </ul>
+        <a href="{{ url_for('meal') }}" class="btn-secondary">Composer mon repas 🍽</a>
+    {% endif %}
+</div>
+{% endblock %}

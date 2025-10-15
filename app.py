@@ -118,6 +118,18 @@ def overview():
 
     return render_template("overview.html", user=user, tdee=tdee, targets=targets, foods=foods)
 
+@app.route("/analysis", methods=["GET", "POST"])
+def analysis():
+    foods = recommender.all_foods()
+    if request.method == "POST":
+        base_food = request.form.get("food_name")
+        meal_pred, recs, _ = recommender.pipeline(base_food)
+        cm = {"base_food": base_food, "meal_type": meal_pred, "selected_foods": [base_food]}
+        session["current_meal"] = cm
+        session["last_recs"] = recs
+        return render_template("analysis.html", base_food=base_food, meal_type=meal_pred, suggestions=recs, foods=foods)
+    return render_template("analysis.html", foods=foods)
+
 @app.route("/meal", methods=["GET", "POST"])
 def meal():
     foods_all = recommender.all_foods()
@@ -169,11 +181,11 @@ def meal():
     if target_for_meal is not None:
         diff = total_calories - target_for_meal
         if diff > 50:
-            diff_message = f"⚠️ Ce repas dépasse l’objectif de {diff:.0f} kcal."
+            diff_message = f"Ce repas dépasse l’objectif de {diff:.0f} kcal."
         elif diff < -50:
-            diff_message = f"ℹ️ Ce repas est en dessous de l’objectif de {-diff:.0f} kcal."
+            diff_message = f"Ce repas est en dessous de l’objectif de {-diff:.0f} kcal."
         else:
-            diff_message = "✅ Ce repas correspond parfaitement à votre objectif calorique."
+            diff_message = "Ce repas correspond parfaitement à votre objectif calorique."
 
     graphs = []
     if selected:

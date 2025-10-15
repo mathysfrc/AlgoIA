@@ -1,32 +1,24 @@
 {% extends "base.html" %}
 {% block content %}
-<h2>⚡ Votre aperçu</h2>
-{% if user %}
-    <p>Profil : {{ user.sex }}, {{ user.age }} ans, {{ user.height }} cm</p>
-    <p>Poids actuel : <strong>{{ user.weight }} kg</strong> → Objectif : <strong>{{ user.target_weight }} kg</strong></p>
-    <p>Durée : {{ user.duration }} semaines — Entraînements : {{ user.workouts }}/semaine</p>
-{% endif %}
+<div class="card">
+    <h2>⚡ Aperçu</h2>
+    {% if user %}
+        <p>{{ user.sex|capitalize }}, {{ user.age }} ans — {{ user.height }} cm</p>
+        <p>Poids : <strong>{{ user.weight }} kg</strong> → Objectif : <strong>{{ user.target_weight }} kg</strong></p>
+        <p>Durée : {{ user.duration }} semaines — {{ user.workouts }} séances/semaine</p>
+    {% endif %}
 
-{% if tdee %}
-    <p>Apport recommandé : <strong>{{ tdee }} kcal / jour</strong></p>
-    <h3>Répartition conseillée :</h3>
-    <ul>
+    {% if tdee %}
+        <p>Apport recommandé : <strong>{{ tdee }} kcal / jour</strong></p>
+        <h3>Répartition par repas :</h3>
+        <ul>
         {% for meal, val in targets.items() %}
             <li>{{ meal }} : {{ val }} kcal</li>
         {% endfor %}
-    </ul>
-{% else %}
-    <p>⚠️ Remplissez votre profil pour calculer vos besoins.</p>
-{% endif %}
-
-<h2>Analyser un aliment</h2>
-<form method="POST">
-    <label>Aliment de base :</label>
-    <select name="food_name" required>
-        {% for f in foods %}
-            <option value="{{ f }}">{{ f }}</option>
-        {% endfor %}
-    </select>
-    <button type="submit">Analyser et proposer</button>
-</form>
+        </ul>
+        <a href="{{ url_for('analysis') }}" class="btn-primary">Analyser un aliment 🍎</a>
+    {% else %}
+        <p>⚠️ Veuillez d’abord compléter votre profil.</p>
+    {% endif %}
+</div>
 {% endblock %}

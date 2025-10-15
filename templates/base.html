@@ -7,18 +7,24 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-    <div class="container">
-        <h1>Fitness Nutrition Recommender</h1>
+<header>
+    <div class="nav-container">
+        <h1>🥗 Fitness Nutrition</h1>
         <nav>
-            <a href="{{ url_for('profile') }}">Profil</a> |
-            <a href="{{ url_for('overview') }}">Overview</a> |
-            <a href="{{ url_for('meal') }}">Meal</a>
+            <a href="{{ url_for('profile') }}">Profil</a>
+            <a href="{{ url_for('overview') }}">Aperçu</a>
+            <a href="{{ url_for('analysis') }}">Analyse</a>
+            <a href="{{ url_for('meal') }}">Repas</a>
         </nav>
-        <hr style="margin:20px 0;">
-        {% block content %}{% endblock %}
-        <footer>
-            <p>Application demo — données estimées (ne remplace pas un pro de santé).</p>
-        </footer>
     </div>
+</header>
+
+<main class="content">
+    {% block content %}{% endblock %}
+</main>
+
+<footer>
+    <p>Application démo — données estimées (ne remplace pas un pro de santé).</p>
+</footer>
 </body>
 </html>
