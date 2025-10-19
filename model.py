@@ -16,7 +16,7 @@ warnings.filterwarnings("ignore")
 
 class NutritionRecommender:
     """
-    Classe principal: charge le CSV, nettoie, entraine plusieurs modèles (classification & régression)
+    Classe principal: charge le CSV, nettoie, entraine plusieurs modèles
     et expose les fonctions utilisées par l'app Flask (pipeline, smart_recommendations, etc.).
     """
 
@@ -97,22 +97,23 @@ class NutritionRecommender:
             y_enc = np.zeros(len(y), dtype=int)
             self.le_meal.fit(["Unknown"])
 
-        # --- optional outlier removal (LOF) pour stabiliser KNN/trees/regressions ---
+        # --- optional outlier removal pour stabiliser KNN/trees/regressions ---
         try:
-            # LOF appliqué uniquement sur les colonnes nutritives (pré-scaling)
+            # appliqué uniquement sur les colonnes nutritives (pré-scaling)
+            # Mise en place d'editing
             lof = LocalOutlierFactor(n_neighbors=20, contamination="auto")
             lof_mask = lof.fit_predict(X) > 0
-            # si LOF retourne peu d'éléments (ex: petits dataset), on skip
+            # si retourne peu d'éléments (ex: petits dataset), on skip
             if np.sum(lof_mask) > max(10, 0.8 * len(lof_mask)):
                 X = X[lof_mask]
                 self.data = self.data.iloc[np.where(lof_mask)[0]]
                 y_enc = y_enc[np.where(lof_mask)[0]]
                 self._normalized_foods = [str(f).strip().lower() for f in self.data['Food Category'].values]
         except Exception:
-            # si LOF échoue, on continue sans suppression
+            # si échoue, on continue sans suppression
             pass
 
-        # split pour classification (70/30)
+        # split (70/30)
         try:
             X_train_cls, X_test_cls, y_train_cls, y_test_cls = train_test_split(X, y_enc, test_size=0.3, random_state=42)
         except Exception:
@@ -122,7 +123,7 @@ class NutritionRecommender:
             X_train_cls, X_test_cls = X[:cut], X[cut:]
             y_train_cls, y_test_cls = y_enc[:cut], y_enc[cut:]
 
-        # --- Decision Tree with cost-complexity pruning selection via cross-valid.
+        # Mise en place de l'arbre de décision avec post-prunning et k-cross validation
         try:
             # compute path
             base_tree = DecisionTreeClassifier(random_state=42)
@@ -133,6 +134,7 @@ class NutritionRecommender:
             best_score = -np.inf
             for a in np.unique(np.clip(ccp_alphas, 0.0, None))[:10]:
                 dt = DecisionTreeClassifier(random_state=42, ccp_alpha=a)
+                # k-cross validation
                 scores = cross_val_score(dt, X_train_cls, y_train_cls, cv=3)
                 mean_s = scores.mean()
                 if mean_s > best_score:
