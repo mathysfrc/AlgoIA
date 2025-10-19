@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+    <h2>Analyse des modèles ML</h2>
+
+    <p>Résumé des performances pour chaque modèle entraîné dans <code>NutritionRecommender</code>.</p>
+
+    <section>
+        <h3>Graphique récapitulatif</h3>
+        {% if plot_path %}
+            <div style="max-width:1000px;">
+                <img src="{{ url_for('static', filename=plot_path.split('static/')[-1]) }}" alt="ML summary plot" style="width:100%; height:auto; border-radius:8px; box-shadow: 0 2px 8px rgba(0,0,0,0.12);">
+            </div>
+        {% else %}
+            <p>Aucun graphique disponible.</p>
+        {% endif %}
+    </section>
+
+    <section style="margin-top:1.5rem;">
+        <h3>Détails par modèle</h3>
+        <table class="table" style="width:100%; border-collapse:collapse;">
+            <thead>
+                <tr>
+                    <th style="text-align:left; padding:8px; border-bottom:1px solid #ddd;">Modèle</th>
+                    <th style="text-align:left; padding:8px; border-bottom:1px solid #ddd;">Type</th>
+                    <th style="text-align:left; padding:8px; border-bottom:1px solid #ddd;">Métriques</th>
+                    <th style="text-align:left; padding:8px; border-bottom:1px solid #ddd;">Interprétation</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for m in results %}
+                <tr>
+                    <td style="padding:8px; vertical-align:top; border-bottom:1px solid #f0f0f0;"><strong>{{ m.name }}</strong></td>
+                    <td style="padding:8px; vertical-align:top; border-bottom:1px solid #f0f0f0;">{{ m.type }}</td>
+                    <td style="padding:8px; vertical-align:top; border-bottom:1px solid #f0f0f0;">
+                        <ul style="margin:0; padding-left:16px;">
+                        {% for k, v in m.metrics.items() %}
+                            <li><strong>{{ k }}:</strong> {{ v }}</li>
+                        {% endfor %}
+                        </ul>
+                    </td>
+                    <td style="padding:8px; vertical-align:top; border-bottom:1px solid #f0f0f0;">
+                        <em>{{ m.interpretation }}</em>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
+    <p style="margin-top:1rem;">
+        <a href="{{ url_for('overview') }}" class="btn-secondary">Retour</a>
+    </p>
+</div>
+{% endblock %}
