@@ -1,474 +1,269 @@
-import numpy as np
-from flask import Flask, render_template, request, redirect, url_for, session
-from sklearn.metrics import confusion_matrix, mean_squared_error, r2_score, classification_report, accuracy_score
-from model import NutritionRecommender
-import base64
-from io import BytesIO
-import matplotlib.pyplot as plt
+import streamlit as st
+import pandas as pd
+import joblib
 import os
+import matplotlib.pyplot as plt
+from user_profile import *
+from meal_planner import MealPlanner
+from models import NutriAI
+from sklearn.tree import plot_tree
 
-app = Flask(__name__)
-app.secret_key = os.urandom(24)
-recommender = NutritionRecommender("all_datas.csv")
+# === CONFIGURATION ===
+st.set_page_config(page_title="NutriAI", layout="wide")
+st.title("NutriAI – Recommandations Nutritionnelles Personnalisées")
 
-def compute_model_results():
-    """
-    Évalue les modèles déjà entraînés dans `recommender`.
-    Retourne: (results_list, plot_path)
-    - results_list: liste de dict {name, type, metrics: {...}, interpretation}
-    - plot_path: chemin relatif vers un PNG sauvegardé dans static/
-    """
-    results = []
-
-    # --- Préparer jeux de test similaires à ceux utilisés en training ---
-    df = recommender.data.copy()
-    # Classification (Meal Type) : X = nutrition_cols, y = Meal Type (encoded)
-    X_cls = df[recommender.nutrition_cols].values.astype(float)
-    if "Meal Type" in df.columns:
-        y_cls = df["Meal Type"].astype(str).values
-    else:
-        y_cls = np.array(["Unknown"] * len(df))
-
-    # Regression (Calories) : features sans 'Calories'
-    features_no_cal = ["Protein", "Carbs", "Fat", "Saturated Fat", "Fiber", "Sugar", "Sodium", "Water"]
-    X_reg = df[features_no_cal].values.astype(float)
-    y_reg = df["Calories"].values.astype(float)
-
-    # split simple (deterministe) pour évaluation
-    from sklearn.model_selection import train_test_split
-    Xc_train, Xc_test, yc_train, yc_test = train_test_split(X_cls, y_cls, test_size=0.3, random_state=42)
-    Xr_train, Xr_test, yr_train, yr_test = train_test_split(X_reg, y_reg, test_size=0.3, random_state=42)
-
-    # ----- ÉVALUATION classification: decision_tree (si présent) -----
-    try:
-        dt = recommender.decision_tree
-        if dt is not None:
-            # Prédire sur Xc_test
-            y_pred_enc = dt.predict(Xc_test)
-            # Vérifier les étiquettes et utiliser le LabelEncoder si nécessaire
-            try:
-                if hasattr(recommender, 'le_meal') and recommender.le_meal is not None:
-                    # Vérifier la compatibilité des étiquettes
-                    unique_labels = np.unique(yc_test)
-                    known_labels = recommender.le_meal.classes_
-                    print("Étiquettes yc_test:", unique_labels)
-                    print("Classes du LabelEncoder:", known_labels)
-                    # Filtrer les étiquettes non reconnues
-                    valid_mask = np.isin(yc_test, known_labels)
-                    if not valid_mask.any():
-                        raise ValueError("Aucune étiquette valide pour la matrice de confusion")
-                    yc_test_valid = yc_test[valid_mask]
-                    y_pred_enc_valid = y_pred_enc[valid_mask]
-                    Xc_test_valid = Xc_test[valid_mask]
-                    # Encoder les étiquettes valides
-                    y_true_enc = recommender.le_meal.transform(yc_test_valid)
-                    y_pred_labels = recommender.le_meal.inverse_transform(y_pred_enc_valid)
-                else:
-                    raise ValueError("LabelEncoder non disponible")
-                # Calculer les métriques
-                acc = accuracy_score(yc_test_valid, y_pred_labels)
-                cm = confusion_matrix(yc_test_valid, y_pred_labels, labels=np.unique(yc_test_valid))
-                report = classification_report(yc_test_valid, y_pred_labels, zero_division=0)
-                print("Matrice de confusion:", cm)
-                results.append({
-                    "name": "DecisionTreeClassifier",
-                    "type": "classification",
-                    "metrics": {
-                        "Accuracy": f"{acc:.3f}",
-                        "Confusion matrix shape": f"{cm.shape}",
-                        "Classification report (brief)": report.replace("\n", " | ")
-                    },
-                    "interpretation": "Arbre entraîné pour prédire le type de repas. Vérifier classes peu représentées dans le rapport."
-                })
-            except Exception as e:
-                print("Erreur dans le traitement des étiquettes:", str(e))
-                results.append({
-                    "name": "DecisionTreeClassifier",
-                    "type": "classification",
-                    "metrics": {"Error": f"Échec traitement étiquettes: {str(e)}"},
-                    "interpretation": "Vérifiez les données de 'Meal Type' ou le LabelEncoder."
-                })
-        else:
-            print("DecisionTree absent")
-            results.append({
-                "name": "DecisionTreeClassifier",
-                "type": "classification",
-                "metrics": {"Status": "Non disponible"},
-                "interpretation": "Modèle absent."
-            })
-    except Exception as e:
-        print("Erreur dans l'évaluation du DecisionTree:", str(e))
-        results.append({
-            "name": "DecisionTreeClassifier",
-            "type": "classification",
-            "metrics": {"Error": str(e)},
-            "interpretation": "Échec évaluation."
-        })
-
-    # ----- ÉVALUATION régressions calories -----
-    regressors = [
-        ("LinearRegression", getattr(recommender, "linear_reg", None)),
-        ("Ridge", getattr(recommender, "ridge_reg", None)),
-        ("Polynomial(2)+Linear", getattr(recommender, "poly_reg", None)),
-        ("CalReg(RandomForest or fallback)", getattr(recommender, "cal_reg", None))
-    ]
-
-    for name, model in regressors:
-        if model is None:
-            results.append({
-                "name": name,
-                "type": "regression",
-                "metrics": {"Status": "Non disponible"},
-                "interpretation": "Aucun modèle pour cette entrée."
-            })
-            continue
-        try:
-            if name.startswith("Polynomial") and getattr(recommender, "poly", None):
-                X_test_trans = recommender.poly.transform(Xr_test)
-            else:
-                X_test_trans = Xr_test
-            y_pred = model.predict(X_test_trans)
-            rmse = np.sqrt(mean_squared_error(yr_test, y_pred))
-            r2 = r2_score(yr_test, y_pred)
-            mean_err = float(np.mean(y_pred - yr_test))
-            results.append({
-                "name": name,
-                "type": "regression",
-                "metrics": {
-                    "RMSE": f"{rmse:.3f}",
-                    "R2": f"{r2:.3f}",
-                    "Mean error (pred - réel)": f"{mean_err:.3f}"
-                },
-                "interpretation": "Comparer RMSE/R2 pour juger la qualité. R2 proche de 1 = bon, RMSE bas = erreurs faibles."
-            })
-        except Exception as e:
-            results.append({
-                "name": name,
-                "type": "regression",
-                "metrics": {"Error": str(e)},
-                "interpretation": "Échec évaluation."
-            })
-
-    # ----- Génération d'un plot récapitulatif (matrice confusion + résidus) -----
-    try:
-        fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-        axes = axes.flatten()
-
-        # 1) Matrice de confusion pour decision tree (si possible)
-        try:
-            if recommender.decision_tree is not None:
-                y_pred_enc = recommender.decision_tree.predict(Xc_test)
-                if hasattr(recommender, 'le_meal') and recommender.le_meal is not None:
-                    unique_labels = np.unique(yc_test)
-                    valid_mask = np.isin(yc_test, recommender.le_meal.classes_)
-                    if valid_mask.any():
-                        yc_test_valid = yc_test[valid_mask]
-                        y_pred_enc_valid = y_pred_enc[valid_mask]
-                        y_true_enc = recommender.le_meal.transform(yc_test_valid)
-                        y_pred_labels = recommender.le_meal.inverse_transform(y_pred_enc_valid)
-                        cm = confusion_matrix(yc_test_valid, y_pred_labels, labels=np.unique(yc_test_valid))
-                        print("Matrice de confusion (plot):", cm)
-                        ax = axes[0]
-                        im = ax.imshow(cm, cmap='Blues', aspect='auto')
-                        ax.set_title("Confusion matrix (DecisionTree)")
-                        ax.set_xticks(np.arange(len(unique_labels)))
-                        ax.set_yticks(np.arange(len(unique_labels)))
-                        ax.set_xticklabels(unique_labels, rotation=45, ha='right')
-                        ax.set_yticklabels(unique_labels)
-                        ax.set_xlabel("Predicted")
-                        ax.set_ylabel("True")
-                        plt.colorbar(im, ax=ax)
-                        for i in range(len(unique_labels)):
-                            for j in range(len(unique_labels)):
-                                ax.text(j, i, int(cm[i, j]), ha="center", va="center", fontsize=8, color='black')
-                    else:
-                        axes[0].text(0.5, 0.5, "Aucune étiquette valide", ha='center', va='center')
-                        axes[0].set_title("Confusion matrix (DecisionTree)")
-                else:
-                    axes[0].text(0.5, 0.5, "LabelEncoder absent", ha='center', va='center')
-                    axes[0].set_title("Confusion matrix (DecisionTree)")
-            else:
-                print("DecisionTree absent (plot)")
-                axes[0].text(0.5, 0.5, "DecisionTree absent", ha='center', va='center')
-                axes[0].set_title("Confusion matrix (DecisionTree)")
-        except Exception as e:
-            print("Erreur dans le plot de la matrice de confusion:", str(e))
-            axes[0].text(0.5, 0.5, f"Erreur: {str(e)}", ha='center', va='center')
-            axes[0].set_title("Confusion matrix (DecisionTree)")
-
-        # 2) Résidus - LinearRegression
-        try:
-            lr = recommender.linear_reg
-            if lr is not None:
-                y_pred_lr = lr.predict(Xr_test)
-                residuals = yr_test - y_pred_lr
-                ax = axes[1]
-                ax.scatter(y_pred_lr, residuals, s=8)
-                ax.axhline(0, linestyle='--')
-                ax.set_xlabel("Predicted Calories")
-                ax.set_ylabel("Residuals (real - pred)")
-                ax.set_title("Residuals (LinearRegression)")
-            else:
-                axes[1].text(0.5, 0.5, "LinearRegression absent", ha='center', va='center')
-                axes[1].set_title("Residuals (LinearRegression)")
-        except Exception:
-            axes[1].text(0.5, 0.5, "Erreur residuals", ha='center', va='center')
-            axes[1].set_title("Residuals (LinearRegression)")
-
-        # 3) Pred vs Réel - RandomForest (cal_reg)
-        try:
-            rf = recommender.cal_reg
-            if rf is not None:
-                y_pred_rf = rf.predict(Xr_test)
-                ax = axes[2]
-                ax.scatter(yr_test, y_pred_rf, s=8)
-                ax.plot([yr_test.min(), yr_test.max()], [yr_test.min(), yr_test.max()], linestyle='--')
-                ax.set_xlabel("Real Calories")
-                ax.set_ylabel("Predicted Calories")
-                ax.set_title("Predicted vs Real (cal_reg)")
-            else:
-                axes[2].text(0.5, 0.5, "cal_reg absent", ha='center', va='center')
-                axes[2].set_title("Pred vs Real (cal_reg)")
-        except Exception:
-            axes[2].text(0.5, 0.5, "Erreur pred vs real", ha='center', va='center')
-            axes[2].set_title("Pred vs Real (cal_reg)")
-
-        # 4) Histogramme des erreurs (régression la plus performante trouvée)
-        try:
-            best_name, best_err = None, float('inf')
-            for name, model in regressors:
-                if model is None:
-                    continue
-                try:
-                    if name.startswith("Polynomial") and getattr(recommender, "poly", None):
-                        ypred = model.predict(recommender.poly.transform(Xr_test))
-                    else:
-                        ypred = model.predict(Xr_test)
-                    rmse = np.sqrt(mean_squared_error(yr_test, ypred))
-                    if rmse < best_err:
-                        best_err = rmse
-                        best_name = name
-                        best_pred = ypred
-                except Exception:
-                    continue
-            ax = axes[3]
-            if best_name is not None:
-                errors = yr_test - best_pred
-                ax.hist(errors, bins=30)
-                ax.set_title(f"Histogramme des erreurs (meilleur: {best_name})")
-                ax.set_xlabel("Erreur (real - pred)")
-            else:
-                ax.text(0.5, 0.5, "Aucun modèle régression disponible", ha='center', va='center')
-                ax.set_title("Histogramme des erreurs")
-        except Exception:
-            axes[3].text(0.5, 0.5, "Erreur histogramme", ha='center', va='center')
-            axes[3].set_title("Histogramme des erreurs")
-
-        fig.tight_layout()
-
-        # Sauvegarder dans static/
-        static_dir = os.path.join(os.getcwd(), "static")
-        if not os.path.isdir(static_dir):
-            os.makedirs(static_dir, exist_ok=True)
-        out_path = os.path.join(static_dir, "ml_models_summary.png")
-        fig.savefig(out_path, dpi=150)
-        plt.close(fig)
-
-        # Path relatif pour utilisation dans template
-        plot_path = out_path.replace("\\", "/")
-    except Exception as e:
-        print("Erreur génération plot récapitulatif:", e)
-        plot_path = None
-
-    return results, plot_path
-
-def safe_float(value, default=0.0):
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return default
-
-def safe_int(value, default=0):
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
-
-def compute_calorie_plan(weight, target_weight, height, age, sex, workouts_per_week, duration_weeks):
-    """
-    Calcule TDEE, besoin calorique cible, et répartition par repas
-    """
-    if sex == "male":
-        bmr = 10 * weight + 6.25 * height - 5 * age + 5
-    else:
-        bmr = 10 * weight + 6.25 * height - 5 * age - 161
-    if workouts_per_week <= 1:
-        factor = 1.2
-    elif workouts_per_week <= 3:
-        factor = 1.375
-    elif workouts_per_week <= 5:
-        factor = 1.55
-    else:
-        factor = 1.725
-    tdee = bmr * factor
-    diff_poids = target_weight - weight
-    calories_diff_totales = diff_poids * 7700
-    jours = max(1, duration_weeks * 7)
-    delta_journalier = calories_diff_totales / jours
-    calories_cibles = tdee + delta_journalier
-    repartition = {
-        "Breakfast": 0.25,
-        "Lunch": 0.35,
-        "Dinner": 0.30,
-        "Snack": 0.10
+# === FONCTION : Affichage du rôle avec couleur ===
+def get_role_display(role):
+    mapping = {
+        "Privilégier": ("Privilégier", "success"),
+        "Éviter": ("Éviter", "error"),
+        "Modération": ("Modération", "warning"),
+        "Neutre": ("Neutre", "secondary")
     }
-    calories_par_repas = {rep: round(calories_cibles * pct) for rep, pct in repartition.items()}
-    return round(calories_cibles), calories_par_repas
+    return mapping.get(role, ("Inconnu", "secondary"))
 
-@app.route("/", methods=["GET", "POST"])
-def profile():
-    if request.method == "POST":
-        sex = request.form.get("sex")
-        weight = safe_float(request.form.get("weight"))
-        target_weight = safe_float(request.form.get("target_weight"))
-        height = safe_float(request.form.get("height"))
-        age = safe_int(request.form.get("age"))
-        workouts = safe_int(request.form.get("workouts"))
-        duration = safe_int(request.form.get("duration"))
-        session['user'] = {
-            "sex": sex,
-            "weight": weight,
-            "target_weight": target_weight,
-            "height": height,
-            "age": age,
-            "workouts": workouts,
-            "duration": duration
+# === CHARGEMENT DES MODÈLES ===
+@st.cache_resource
+def load_models():
+    model_dir = "models"
+    ai = NutriAI()
+
+    paths = {
+        "rf_balance": os.path.join(model_dir, "rf_balance.pkl"),
+        "rf_classifier": os.path.join(model_dir, "rf_classifier.pkl"),
+        "knn": os.path.join(model_dir, "knn_recommender.pkl"),
+        "scaler": os.path.join(model_dir, "scaler.pkl")
+    }
+
+    for name, path in paths.items():
+        if not os.path.exists(path):
+            st.error(f"Modèle manquant : {path}")
+            st.stop()
+
+    ai.rf_reg = joblib.load(paths["rf_balance"])
+    ai.rf_clf = joblib.load(paths["rf_classifier"])
+    ai.knn = joblib.load(paths["knn"])
+    ai.scaler = joblib.load(paths["scaler"])
+
+    df = ai.df.copy()
+    df['prot_ratio'] = df['Protein'] * 4 / df['Calories']
+    df['carb_ratio'] = df['Carbs'] * 4 / df['Calories']
+    df['fat_ratio'] = df['Fat'] * 9 / df['Calories']
+    X = df[ai.features]
+    df['role'] = ai.rf_clf.predict(X)
+    ai.df = df
+
+    return ai
+
+ai = load_models()
+planner = MealPlanner()
+
+# === SIDEBAR : Profil utilisateur ===
+with st.sidebar:
+    st.header("Votre Profil")
+    weight = st.slider("Poids (kg)", 40, 150, 70)
+    height = st.slider("Taille (cm)", 140, 220, 175)
+    age = st.slider("Âge", 16, 80, 30)
+    gender = st.selectbox("Sexe", ["Homme", "Femme"])
+    activity_levels = ["Sédentaire", "Léger", "Modéré", "Intense", "Athlète"]
+    activity = st.selectbox("Activité", activity_levels)
+    objective = st.selectbox("Objectif", ["perte", "maintien", "gain"])
+
+    if st.button("Calculer mes besoins"):
+        bmr = calculate_bmr(weight, height, age, gender)
+        tdee = calculate_tdee(bmr, activity)
+        macros = get_macro_targets(tdee, objective, weight)
+        st.session_state.macros = macros
+        st.success(f"**TDEE**: {int(tdee)} kcal\n**Macros**: P:{macros['protein']}g | G:{macros['carbs']}g | L:{macros['fat']}g")
+
+# === ONGLET : Création des tabs ===
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "Recommandations", "Repas", "Analyse Aliment", "Modèles & Performances", "Arbre Explicatif"
+])
+
+# === ONGLET 1 : Recommandations ===
+with tab1:
+    st.subheader("Aliments à privilégier")
+    if 'macros' in st.session_state:
+        role_target = "Privilégier" if objective == "perte" else "Éviter"
+        subset = ai.df[ai.df['role'] == role_target]
+        if len(subset) == 0:
+            st.warning(f"Aucun aliment trouvé pour '{role_target}'.")
+        else:
+            st.markdown(f"### Aliments à **{role_target}** pour votre objectif")
+            foods = subset.sample(n=min(5, len(subset)), replace=False)
+            for _, f in foods.iterrows():
+                with st.expander(f"**{f['Food Category']}** – {f['Meal Type']}"):
+                    label, color = get_role_display(f['role'])
+                    if color == "success":
+                        st.success(f"Rôle : {label}")
+                    elif color == "error":
+                        st.error(f"Rôle : {label}")
+                    elif color == "warning":
+                        st.warning(f"Rôle : {label}")
+                    else:
+                        st.info(f"Rôle : {label}")
+
+                    col1, col2 = st.columns(2)
+                    col1.metric("Calories", f"{f['Calories']:.0f}")
+                    col2.metric("Score d'équilibre", f"{f['balance_score']:.2f}")
+                    st.progress(f['balance_score'])
+
+                    reasons = []
+                    if f['Protein'] > 15: reasons.append("riche en protéines")
+                    if f['Fiber'] > 3: reasons.append("bonnes fibres")
+                    if f['Sugar'] < 5: reasons.append("peu sucré")
+                    if f['Fat'] > 20: reasons.append("gras")
+                    if f['Sugar'] > 15: reasons.append("trop sucré")
+                    if reasons:
+                        st.caption(f"→ {', '.join(reasons)}")
+
+# === ONGLET 2 : Plan de repas ===
+with tab2:
+    st.subheader("Plan Nutritionnel Journalier")
+    if 'macros' in st.session_state and st.button("Générer mon plan complet"):
+        plan, totals = planner.generate_daily_plan(st.session_state.macros)
+
+        for meal, foods in plan.items():
+            total_cal = sum(f['Calories'] for f in foods)
+            with st.expander(f"**{meal}** – {total_cal:.0f} kcal"):
+                for f in foods:
+                    score = f.get('balance_score', 0.7)
+                    label, color = get_role_display(f['role'])
+                    if color == "success":
+                        st.success(
+                            f"{label} **{f['Food Category']}** – {f['Calories']:.0f} kcal | P:{f['Protein']:.0f}g G:{f['Carbs']:.0f}g L:{f['Fat']:.0f}g | Score: {score:.2f}")
+                    elif color == "error":
+                        st.error(
+                            f"{label} **{f['Food Category']}** – {f['Calories']:.0f} kcal | P:{f['Protein']:.0f}g G:{f['Carbs']:.0f}g L:{f['Fat']:.0f}g | Score: {score:.2f}")
+                    elif color == "warning":
+                        st.warning(
+                            f"{label} **{f['Food Category']}** – {f['Calories']:.0f} kcal | P:{f['Protein']:.0f}g G:{f['Carbs']:.0f}g L:{f['Fat']:.0f}g | Score: {score:.2f}")
+                    else:
+                        st.info(
+                            f"{label} **{f['Food Category']}** – {f['Calories']:.0f} kcal | P:{f['Protein']:.0f}g G:{f['Carbs']:.0f}g L:{f['Fat']:.0f}g | Score: {score:.2f}")
+
+
+        st.success(f"**Total jour** : {totals['calories']:.0f} kcal | "
+                   f"P:{totals['protein']:.0f}g | G:{totals['carbs']:.0f}g | L:{totals['fat']:.0f}g")
+
+        fig, ax = plt.subplots(figsize=(6, 4))
+        labels = ['Protéines', 'Glucides', 'Lipides']
+        cible = [st.session_state.macros['protein'], st.session_state.macros['carbs'], st.session_state.macros['fat']]
+        reel = [totals['protein'], totals['carbs'], totals['fat']]
+        x = range(len(labels))
+        ax.bar(x, cible, width=0.4, label='Cible', color='skyblue', alpha=0.8)
+        ax.bar([i + 0.4 for i in x], reel, width=0.4, label='Réel', color='lightcoral', alpha=0.8)
+        ax.set_ylabel('grammes')
+        ax.set_xticks([i + 0.2 for i in x])
+        ax.set_xticklabels(labels)
+        ax.legend()
+        st.pyplot(fig)
+
+# === ONGLET 3 : Analyse Aliment ===
+with tab3:
+    st.subheader("Analyse d’un aliment")
+    food_name = st.text_input("Rechercher un aliment")
+    if food_name:
+        matches = ai.df[ai.df['Food Category'].str.contains(food_name, case=False, na=False)]
+        if not matches.empty:
+            f = matches.iloc[0]
+            label, color = get_role_display(f['role'])
+            if color == "success":
+                st.success(f"Rôle : {label}")
+            elif color == "error":
+                st.error(f"Rôle : {label}")
+            elif color == "warning":
+                st.warning(f"Rôle : {label}")
+            else:
+                st.info(f"Rôle : {label}")
+
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Calories", f"{f['Calories']:.0f}")
+            col2.metric("Score Équilibre", f"{f['balance_score']:.2f}")
+            col3.metric("Satiété /100kcal", f"{f['satiety_index']:.1f}")
+
+            st.write("**Ratios clés** :")
+            st.write(f"• Protéines : {f['prot_ratio']:.1%}")
+            st.write(f"• Glucides : {f['carb_ratio']:.1%}")
+            st.write(f"• Lipides : {f['fat_ratio']:.1%}")
+            st.write(f"• Densité : {f['density_kcal_100g']:.1f} kcal/100g")
+
+            st.write("**Aliments similaires** :")
+            similar = ai.recommend_similar(f['Food Category'])
+            for sim_name in similar[:4]:
+                sim_row = ai.df[ai.df['Food Category'] == sim_name]
+                if not sim_row.empty:
+                    sim = sim_row.iloc[0]
+                    sim_label, sim_color = get_role_display(sim['role'])
+                    if sim_color == "success":
+                        st.success(f"→ {sim_name} – {sim_label}")
+                    elif sim_color == "error":
+                        st.error(f"→ {sim_name} – {sim_label}")
+                    elif sim_color == "warning":
+                        st.warning(f"→ {sim_name} – {sim_label}")
+                    else:
+                        st.info(f"→ {sim_name} – {sim_label}")
+
+
+# === ONGLET 4 : Performances des modèles ===
+with tab4:
+    st.header("Performances des Modèles ML")
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.subheader("Random Forest Regressor")
+        st.metric("MAE", "0.0108")
+        st.write("**Meilleurs hyperparamètres** :")
+        st.code("n_estimators: 300\nmax_depth: 15\nmin_samples_split: 2", language="text")
+
+    with col2:
+        st.subheader("Random Forest Classifier")
+        st.write("**Accuracy** : 97%")
+        data = {
+            "": ["Privilégier", "Modération", "Neutre", "Éviter"],
+            "Classe": ["Privilégier", "Modération", "Neutre", "Éviter"],
+            "Précision": [1.00, 0.96, 0.97, 1.00]
         }
-        if weight > 0 and target_weight > 0 and height > 0 and age > 0 and duration > 0:
-            tdee, targets = compute_calorie_plan(weight, target_weight, height, age, sex, workouts, duration)
-            session['tdee'] = tdee
-            session['targets'] = targets
-        else:
-            session.pop('tdee', None)
-            session.pop('targets', None)
-        session['current_meal'] = {"meal_type": None, "base_food": None, "selected_foods": []}
-        return redirect(url_for('overview'))
-    return render_template("profile.html")
+        df_report = pd.DataFrame(data).set_index("")
+        st.table(df_report)
 
-@app.route("/overview", methods=["GET", "POST"])
-def overview():
-    user = session.get('user')
-    tdee = session.get('tdee')
-    targets = session.get('targets', {})
-    foods = recommender.all_foods()
-    if request.method == "POST":
-        base_food = request.form.get("food_name")
-        meal_pred, recs, total_cal = recommender.pipeline(base_food)
-        cm = session.get('current_meal', {})
-        cm['base_food'] = base_food
-        cm['meal_type'] = meal_pred
-        cm['selected_foods'] = [base_food]
-        session['current_meal'] = cm
-        session['last_total_cal'] = total_cal
-        session['last_recs'] = recs
-        return redirect(url_for('meal'))
-    return render_template("overview.html", user=user, tdee=tdee, targets=targets, foods=foods)
+    st.subheader("KNN Recommander")
+    st.write("**5 aliments similaires** via distance euclidienne dans l’espace nutritionnel")
 
-@app.route("/analysis", methods=["GET", "POST"])
-def analysis():
-    foods = recommender.all_foods()
-    if request.method == "POST":
-        base_food = request.form.get("food_name")
-        meal_pred, recs, _ = recommender.pipeline(base_food)
-        cm = {"base_food": base_food, "meal_type": meal_pred, "selected_foods": [base_food]}
-        session["current_meal"] = cm
-        session["last_recs"] = recs
-        return render_template("analysis.html", base_food=base_food, meal_type=meal_pred, suggestions=recs, foods=foods)
-    return render_template("analysis.html", foods=foods)
+# === ONGLET 5 : Arbre Explicatif ===
+with tab5:
+    st.header("Arbre de Décision Explicatif")
+    st.write("Règles automatiques pour classer un aliment")
 
-@app.route("/meal", methods=["GET", "POST"])
-def meal():
-    foods_all = recommender.all_foods()
-    cm = session.get('current_meal', {"meal_type": None, "base_food": None, "selected_foods": []})
-    targets = session.get('targets', {})
-    tdee = session.get('tdee')
-    suggestions = session.get('last_recs', [])
-    if request.method == "POST":
-        action = request.form.get("action")
-        if action == "set_meal_type":
-            cm['meal_type'] = request.form.get("meal_type_select")
-        elif action == "add_food":
-            add_food = request.form.get("add_food_select")
-            if add_food and add_food not in cm['selected_foods']:
-                cm['selected_foods'].append(add_food)
-        elif action == "remove_food":
-            rem = request.form.get("remove_food_name")
-            if rem and rem in cm['selected_foods']:
-                cm['selected_foods'].remove(rem)
-        elif action == "refresh_recs":
-            if cm.get('base_food'):
-                meal_pred, recs, total_cal = recommender.pipeline(cm['base_food'])
-                cm['meal_type'] = meal_pred
-                session['last_recs'] = recs
-                session['last_total_cal'] = total_cal
-        session['current_meal'] = cm
-        return redirect(url_for('meal'))
-    selected = cm.get('selected_foods', [])
-    total_calories = recommender.calories_for_list(selected) if selected else 0.0
-    target_for_meal = None
-    if cm.get('meal_type') and cm['meal_type'] in targets:
-        target_for_meal = targets[cm['meal_type']]
-    smart_res = None
-    if target_for_meal and cm.get('base_food'):
-        smart_res = recommender.smart_recommendations(
-            base_food=cm['base_food'],
-            target_calories=target_for_meal
-        )
-    diff_message = ""
-    if target_for_meal is not None:
-        diff = total_calories - target_for_meal
-        if diff > 50:
-            diff_message = f"Ce repas dépasse l’objectif de {diff:.0f} kcal."
-        elif diff < -50:
-            diff_message = f"Ce repas est en dessous de l’objectif de {-diff:.0f} kcal."
-        else:
-            diff_message = "Ce repas correspond parfaitement à votre objectif calorique."
-    graphs = []
-    if selected:
-        for class_name in recommender.classes.keys():
-            cols, values = recommender.get_nutrition_data(selected, class_name)
-            fig, ax = plt.subplots(figsize=(7, 4))
-            bottom = [0] * len(selected)
-            for i, nutrient_values in enumerate(zip(*values)):
-                ax.bar(selected, nutrient_values, bottom=bottom, label=cols[i])
-                bottom = [sum(x) for x in zip(bottom, nutrient_values)]
-            ax.set_ylabel("Nutrition value")
-            ax.set_title(class_name)
-            ax.legend()
-            buf = BytesIO()
-            fig.tight_layout()
-            fig.savefig(buf, format="png")
-            buf.seek(0)
-            graphs.append(base64.b64encode(buf.getvalue()).decode('utf-8'))
-            plt.close(fig)
-    return render_template("meal.html",
-                           cm=cm,
-                           foods_all=foods_all,
-                           selected=selected,
-                           total_calories=total_calories,
-                           target_for_meal=target_for_meal,
-                           diff_message=diff_message,
-                           graphs=graphs,
-                           tdee=tdee,
-                           suggestions=suggestions,
-                           smart_res=smart_res)
+    st.markdown("""
+    **Légende :**  
+    - **Privilégier** → Aliments à favoriser (perte de poids)  
+    - **Modération** → À consommer avec parcimonie  
+    - **Neutre** → Ni bon ni mauvais  
+    - **Éviter** → À éviter (trop sucré, gras, vide)
+    """)
 
-@app.route("/ml_analysis")
-def ml_analysis():
-    results, plot_path = compute_model_results()
-    plot_path = plot_path.replace("\\", "/")
-    return render_template("ml_analysis.html", results=results, plot_path=plot_path)
+    if os.path.exists("models/decision_tree.pkl"):
+        try:
+            dt = joblib.load("models/decision_tree.pkl")
+            feature_names = joblib.load("models/tree_features.pkl")
+            rules = ai.get_tree_rules()
+            st.code(rules, language="text")
 
-
-if __name__ == "__main__":
-    app.run(debug=True)
+            fig, ax = plt.subplots(figsize=(16, 10))
+            plot_tree(
+                dt,
+                feature_names=feature_names,
+                class_names=dt.classes_,
+                filled=True,
+                rounded=True,
+                fontsize=9,
+                ax=ax,
+                proportion=True
+            )
+            st.pyplot(fig)
+        except Exception as e:
+            st.error(f"Erreur : {e}")
+    else:
+        st.warning("Entraînez l'arbre avec `python main.py`")
