@@ -205,6 +205,7 @@ with tab3:
                     else:
                         st.info(f"→ {sim_name} – {sim_label}")
 
+
 # === ONGLET 4 : Performances des modèles ===
 with tab4:
     st.header("Performances des Modèles ML")
