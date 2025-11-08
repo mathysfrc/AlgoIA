@@ -1,4 +1,4 @@
-# main.py
+# main.py (MODIFIÉ)
 import os
 from data_preprocessing import load_and_clean
 from models import NutriAI
@@ -15,5 +15,9 @@ if __name__ == "__main__":
     ai.train_balance_predictor()
     ai.classify_food_role(objective="perte")
     ai.train_knn_recommender()
+
+    # AJOUT
+    print("Entraînement de l'arbre de décision...")
+    ai.train_decision_tree()
 
     print("Tout est prêt ! Lancez : streamlit run app.py")

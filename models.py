@@ -1,23 +1,24 @@
-# models.py
 import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 from sklearn.neighbors import NearestNeighbors
 from sklearn.model_selection import train_test_split, GridSearchCV
-from sklearn.metrics import mean_absolute_error, accuracy_score, classification_report
+from sklearn.metrics import mean_absolute_error, classification_report
 from sklearn.preprocessing import StandardScaler
+from sklearn.tree import DecisionTreeClassifier, export_text
 import joblib
+import matplotlib.pyplot as plt
 
 
 class NutriAI:
     def __init__(self):
         self.df = pd.read_csv("data/processed_nutrition.csv")
         self.scaler = StandardScaler()
-        self.features = ['Calories', 'Protein', 'Carbs', 'Fat', 'Fiber', 'Sugar', 'Water', 'density_kcal_100g',
-                         'satiety_index']
+        self.features = ['Calories', 'Protein', 'Carbs', 'Fat', 'Fiber', 'Sugar', 'Water', 'density_kcal_100g', 'satiety_index']
         self.rf_reg = None
         self.rf_clf = None
         self.knn = None
+        self.dt = None  # Arbre de décision
 
     def train_balance_predictor(self):
         X = self.df[self.features]
@@ -74,3 +75,46 @@ class NutriAI:
         X = self.scaler.transform(self.df.loc[idx:idx, self.features])
         _, indices = self.knn.kneighbors(X)
         return self.df.iloc[indices[0][1:]]['Food Category'].tolist()
+
+    # === ARBRE DE DÉCISION EXPLICATIF ===
+    def train_decision_tree(self):
+        df = self.df.copy()
+
+        # Ajouter des features plus discriminantes
+        df['high_protein'] = (df['prot_ratio'] > 0.3).astype(int)
+        df['high_fiber'] = (df['Fiber'] > 5).astype(int)
+        df['low_sugar'] = (df['Sugar'] < 3).astype(int)
+        df['dense_food'] = (df['density_kcal_100g'] > 3).astype(int)
+
+        features_tree = [
+            'calorie_level', 'protein_level', 'fiber_level',
+            'high_protein', 'high_fiber', 'low_sugar', 'dense_food',
+            'satiety_index'
+        ]
+
+        X = df[features_tree].copy()
+        y = df['role']
+
+        # One-hot
+        X = pd.get_dummies(X, columns=['calorie_level', 'protein_level', 'fiber_level'], drop_first=True)
+
+        # Réduire le pruning
+        self.dt = DecisionTreeClassifier(
+            max_depth=6,  # Augmenté
+            min_samples_leaf=5,  # Réduit
+            ccp_alpha=0.005,  # Moins de pruning
+            class_weight='balanced',
+            random_state=42
+        )
+        self.dt.fit(X, y)
+
+        joblib.dump(self.dt, "models/decision_tree.pkl")
+        joblib.dump(X.columns.tolist(), "models/tree_features.pkl")
+        print(f"Arbre entraîné : {self.dt.tree_.node_count} nœuds")
+
+    def get_tree_rules(self):
+        if not hasattr(self, 'dt') or self.dt is None:
+            return "Arbre non entraîné. Lancez `python main.py`."
+        feature_names = joblib.load("models/tree_features.pkl")
+        rules = export_text(self.dt, feature_names=feature_names, max_depth=5)
+        return rules
