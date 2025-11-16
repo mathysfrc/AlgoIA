@@ -1,15 +1,50 @@
 # meal_planner.py
 import pandas as pd
 import joblib
+import os
 
 
 class MealPlanner:
-    def __init__(self):
-        self.df = pd.read_csv("data/processed_nutrition.csv")
-        self.df['role'] = joblib.load("models/rf_classifier.pkl").predict(
-            self.df[['Calories', 'Protein', 'Carbs', 'Fat', 'Fiber', 'Sugar', 'Water', 'density_kcal_100g',
-                     'satiety_index']]
-        )
+    def __init__(self, nutri_ai):
+        self.ai = nutri_ai
+        self.df = nutri_ai.df
+
+        # Charger modèle et features (produits à l'entraînement)
+        if not os.path.exists("models/rf_classifier.pkl"):
+            raise FileNotFoundError("models/rf_classifier.pkl introuvable — entraînez le modèle d'abord (main.py).")
+
+        self.model = joblib.load("models/rf_classifier.pkl")
+
+        # features sauvegardées lors de l'entraînement
+        if os.path.exists("models/rf_classifier_features.pkl"):
+            model_features = joblib.load("models/rf_classifier_features.pkl")
+        else:
+            # fallback minimal
+            model_features = ['Calories', 'Protein', 'Carbs', 'Fat', 'Fiber', 'Sugar', 'Water', 'density_kcal_100g', 'satiety_index']
+
+        # S'assurer colonnes profil/objective existent
+        if 'profil' not in self.df.columns:
+            self.df['profil'] = 'modere'
+        if 'objective' not in self.df.columns:
+            self.df['objective'] = 'maintien'
+        if 'activity_factor' not in self.df.columns:
+            self.df['activity_factor'] = 1.5
+
+        # Encodage identique à l'entraînement (get_dummies + ajout colonnes manquantes)
+        df_encoded = pd.get_dummies(self.df, columns=['profil', 'objective'], drop_first=True)
+
+        # Créer toute colonne manquante attendue par le modèle
+        for col in model_features:
+            if col not in df_encoded.columns:
+                df_encoded[col] = 0
+
+        # Réordonner et sélectionner
+        df_encoded = df_encoded[model_features]
+
+        # Prédire le rôle
+        self.df['role'] = self.model.predict(df_encoded)
+
+        # Catégories pour génération de repas
         self.categories = {
             "Petit-déjeuner": ["Grains", "Fruits", "Dairy"],
             "Déjeuner": ["Meat", "Fish", "Grains", "Vegetables", "Legumes"],

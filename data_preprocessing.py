@@ -1,6 +1,15 @@
 import pandas as pd
 import numpy as np
 
+FEATURES = [
+    'Calories', 'Protein', 'Carbs', 'Fat',
+    'Fiber', 'Sugar', 'Water',
+    'prot_ratio', 'carb_ratio', 'fat_ratio',
+    'fiber_per_100kcal', 'sugar_per_100kcal',
+    'density_kcal_100g', 'satiety_index',
+    'balance_score'
+]
+
 def remove_outliers(df, columns, factor=1.5):
     for col in columns:
         Q1 = df[col].quantile(0.25)
@@ -57,3 +66,23 @@ def load_and_clean(filepath="data/food_data.csv"):
         df['balance_score'].max() - df['balance_score'].min())
 
     return df
+
+def enrich_with_profiles(df):
+    profiles = [
+        {"profil": "sedentaire", "activity_factor": 1.2, "objective": "perte"},
+        {"profil": "modere", "activity_factor": 1.55, "objective": "maintien"},
+        {"profil": "intense", "activity_factor": 1.725, "objective": "gain"},
+        {"profil": "athlete", "activity_factor": 1.9, "objective": "gain"},
+    ]
+
+    augmented_rows = []
+    for _, row in df.iterrows():
+        for p in profiles:
+            r = row.copy()
+            r["profil"] = p["profil"]
+            r["activity_factor"] = p["activity_factor"]
+            r["objective"] = p["objective"]
+            augmented_rows.append(r)
+
+    df_aug = pd.DataFrame(augmented_rows)
+    return df_aug
