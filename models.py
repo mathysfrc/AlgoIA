@@ -1,608 +1,539 @@
-# models.py
-"""NutriAI
-
-Version corrigée du module models.py — spécialement :
-- entraînement du KNN avec sauvegarde DES FEATURES utilisées
-- recommend_similar robuste (compatible sans casser scaler/knn)
-- fallback propres si fichiers manquants
-
-Design goals:
-- Ne jamais tenter de transformer des colonnes non-connues par le scaler.
-- Ne pas changer la dimension d'entrée du KNN après entraînement.
-- Si un user_profile est fourni, on réordonne / re-score les voisins retournés
-  plutôt que d'ajouter des colonnes non prévues au scaler/KNN.
-"""
-
+# models.py - VERSION 100% BASÉE SUR PROFIL UTILISATEUR
 import os
-import json
-import joblib
-import numpy as np
 import pandas as pd
+import numpy as np
+import joblib
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 from sklearn.neighbors import NearestNeighbors
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.tree import DecisionTreeClassifier, export_text
-from user_profile import calculate_bmr, calculate_tdee, get_macro_targets
 
 
 class NutriAI:
     """
-    Classe centrale : gère entraînement & usage de tous les modèles.
-    Tout est modulable par profil / objectif via set_user_profile().
-
-    Notes importantes pour KNN / recommend_similar :
-    - train_knn_recommender() sauve la liste exacte de features dans models/knn_features.json
-    - recommend_similar() utilise strictement ces features pour scaler et knn
-    - Si user_profile est fourni, on **ne modifie pas** la dimension envoyée au scaler/knn :
-      on récupère d'abord les voisins selon le KNN, puis on re-score ces candidats en
-      tenant compte des macros/utilisateur pour produire un classement personnalisé.
+    Système 100% personnalisé basé sur le profil utilisateur complet.
+    Chaque prédiction intègre : âge, poids, taille, genre, activité, objectif.
     """
 
+    UNHEALTHY_BLACKLIST = [
+        'mcdo', 'mcdonald', 'burger king', 'kfc', 'pizza hut', 'domino',
+        'fast food', 'soda', 'coca', 'pepsi', 'fanta', 'sprite',
+        'chips', 'doritos', 'cheetos', 'candy', 'bonbon', 'chocolat industriel',
+        'nuggets', 'fries', 'frites', 'donut', 'croissant industriel'
+    ]
+
     def __init__(self, data_path="data/processed_nutrition.csv"):
-        # Chargement données
         self.df = pd.read_csv(data_path)
 
-        # Features de base utilisées partout
         self.base_features = [
             'Calories', 'Protein', 'Carbs', 'Fat', 'Fiber',
             'Sugar', 'Water', 'density_kcal_100g', 'satiety_index'
         ]
 
-        # Assure colonnes profil/objective/activity_factor
-        if 'profil' not in self.df.columns:
-            self.df['profil'] = 'modere'
-        if 'objective' not in self.df.columns:
-            self.df['objective'] = 'maintien'
-        if 'activity_factor' not in self.df.columns:
-            self.df['activity_factor'] = self.df['profil'].map({
-                'sedentaire': 1.2,
-                'leger': 1.4,
-                'modere': 1.55,
-                'intense': 1.8,
-                'athlete': 2.0
-            }).fillna(1.5)
+        # PROFIL UTILISATEUR COMPLET
+        self.user_profile = {
+            'weight': 70,
+            'height': 175,
+            'age': 30,
+            'gender': 'Homme',
+            'activity': 'Modéré',
+            'objective': 'maintien',
+            'bmr': 0,
+            'tdee': 0,
+            'bmi': 0,
+            'target_protein': 0,
+            'target_carbs': 0,
+            'target_fat': 0,
+            'target_calories': 0,
+            # ENCODAGES pour ML
+            'gender_encoded': 1,  # 1=Homme, 0=Femme
+            'activity_encoded': 2,  # 0-4
+            'objective_encoded': 1,  # 0=perte, 1=maintien, 2=gain
+            'age_group': 1  # 0=jeune, 1=adulte, 2=senior
+        }
 
-        # Calculs de base (au cas où)
-        if 'prot_ratio' not in self.df.columns:
-            # defensive: avoid division by zero
-            self.df['prot_ratio'] = self.df['Protein'] * 4 / self.df['Calories'].replace(0, np.nan)
-            self.df['prot_ratio'] = self.df['prot_ratio'].fillna(0.0)
-        if 'carb_ratio' not in self.df.columns:
-            self.df['carb_ratio'] = self.df['Carbs'] * 4 / self.df['Calories'].replace(0, np.nan)
-            self.df['carb_ratio'] = self.df['carb_ratio'].fillna(0.0)
-        if 'fat_ratio' not in self.df.columns:
-            self.df['fat_ratio'] = self.df['Fat'] * 9 / self.df['Calories'].replace(0, np.nan)
-            self.df['fat_ratio'] = self.df['fat_ratio'].fillna(0.0)
-
-        # Initialisations
+        self._initialize_columns()
         self.scaler = StandardScaler()
+        self.label_encoder = LabelEncoder()
+
+        # Définir ordre des classes EXPLICITEMENT
+        self.class_order = ['Privilégier', 'Modération', 'Neutre', 'Éviter']
+
         self.rf_reg = None
         self.rf_clf = None
         self.knn = None
         self.dt = None
 
-        # profil courant (utilisé pour recommandations runtime)
-        self.current_profile = 'modere'
-        self.current_objective = 'maintien'
-
-        # dossiers modèles
         os.makedirs("models", exist_ok=True)
 
-    # ---------------------------
-    # Helpers
-    # ---------------------------
-    def _get_encoded_X_and_save_features(self, df_local):
+    def _initialize_columns(self):
+        """Initialise colonnes nécessaires"""
+        if 'profil' not in self.df.columns:
+            self.df['profil'] = 'modere'
+        if 'objective' not in self.df.columns:
+            self.df['objective'] = 'maintien'
+
+        self.df['prot_ratio'] = self.df['Protein'] * 4 / self.df['Calories']
+        self.df['carb_ratio'] = self.df['Carbs'] * 4 / self.df['Calories']
+        self.df['fat_ratio'] = self.df['Fat'] * 9 / self.df['Calories']
+
+    # =============================================
+    # CALCUL PROFIL COMPLET
+    # =============================================
+
+    def set_user_profile(self, weight, height, age, gender, activity, objective):
         """
-        Encode profil+objective et retourne X complet. Ne réordonne pas.
+        Calcule TOUS les paramètres du profil utilisateur.
+        Crée des encodages numériques pour intégration dans les modèles ML.
         """
-        df_encoded = pd.get_dummies(df_local, columns=['profil', 'objective'], drop_first=True)
-        extra = [c for c in df_encoded.columns if c.startswith('profil_') or c.startswith('objective_')]
-        # ensure base_features present in df_encoded; if not, add zeros
-        for f in self.base_features:
-            if f not in df_encoded.columns:
-                df_encoded[f] = 0.0
-        X = df_encoded[self.base_features + extra]
-        return X
+        # 1. Stocker paramètres de base
+        self.user_profile.update({
+            'weight': weight,
+            'height': height,
+            'age': age,
+            'gender': gender,
+            'activity': activity,
+            'objective': objective
+        })
 
-    # ---------------------------
-    # Train regression (balance_score)
-    # ---------------------------
-    def train_balance_predictor(self):
-        if 'balance_score' not in self.df.columns:
-            raise ValueError("La colonne 'balance_score' est requise dans processed_nutrition.csv")
+        # 2. Calculer BMR
+        if gender.lower() == "homme":
+            bmr = 88.362 + (13.397 * weight) + (4.799 * height) - (5.677 * age)
+        else:
+            bmr = 447.593 + (9.247 * weight) + (3.098 * height) - (4.330 * age)
 
-        X = self._get_encoded_X_and_save_features(self.df)
-        y = self.df['balance_score']
+        # 3. Calculer TDEE
+        activity_multipliers = {
+            "Sédentaire": 1.2,
+            "Léger": 1.375,
+            "Modéré": 1.55,
+            "Intense": 1.725,
+            "Athlète": 1.9
+        }
+        tdee = bmr * activity_multipliers.get(activity, 1.55)
 
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        # 4. Calculer BMI
+        bmi = weight / ((height / 100) ** 2)
 
-        self.rf_reg = RandomForestRegressor(n_estimators=300, max_depth=15, random_state=42)
-        self.rf_reg.fit(X_train, y_train)
+        # 5. Ajuster selon objectif
+        if objective == "perte":
+            target_cal = tdee - 500
+            protein_ratio = 2.2
+            fat_ratio = 0.8
+        elif objective == "gain":
+            target_cal = tdee + 500
+            protein_ratio = 1.8
+            fat_ratio = 1.0
+        else:
+            target_cal = tdee
+            protein_ratio = 2.0
+            fat_ratio = 0.9
 
-        y_pred = self.rf_reg.predict(X_test)
-        mae = mean_absolute_error(y_test, y_pred)
-        print(f"RF Regressor entraîné — MAE: {mae:.4f}")
+        target_protein = weight * protein_ratio
+        target_fat = weight * fat_ratio
+        target_carbs = (target_cal - (target_protein * 4 + target_fat * 9)) / 4
 
-        joblib.dump(self.rf_reg, "models/rf_balance.pkl")
+        # 6. ENCODAGES NUMÉRIQUES pour ML
+        gender_encoded = 1 if gender.lower() == "homme" else 0
 
-    # ---------------------------
-    # Classification rôle foods
-    # ---------------------------
-    def classify_food_role(self, objective=None):
-        if objective:
-            self.current_objective = objective
+        activity_map = {
+            "Sédentaire": 0,
+            "Léger": 1,
+            "Modéré": 2,
+            "Intense": 3,
+            "Athlète": 4
+        }
+        activity_encoded = activity_map.get(activity, 2)
 
-        # Recalculate ratios (defensive)
-        self.df['prot_ratio'] = (self.df['Protein'] * 4 / self.df['Calories'].replace(0, np.nan)).fillna(0.0)
-        self.df['carb_ratio'] = (self.df['Carbs'] * 4 / self.df['Calories'].replace(0, np.nan)).fillna(0.0)
-        self.df['fat_ratio'] = (self.df['Fat'] * 9 / self.df['Calories'].replace(0, np.nan)).fillna(0.0)
+        objective_map = {"perte": 0, "maintien": 1, "gain": 2}
+        objective_encoded = objective_map.get(objective, 1)
 
-        # règles dynamiques selon objectif
-        if self.current_objective == 'perte':
+        # Groupe d'âge
+        if age < 25:
+            age_group = 0  # Jeune
+        elif age < 50:
+            age_group = 1  # Adulte
+        else:
+            age_group = 2  # Senior
+
+        # 7. Mettre à jour profil complet
+        self.user_profile.update({
+            'bmr': bmr,
+            'tdee': tdee,
+            'bmi': bmi,
+            'target_protein': target_protein,
+            'target_carbs': target_carbs,
+            'target_fat': target_fat,
+            'target_calories': target_cal,
+            'gender_encoded': gender_encoded,
+            'activity_encoded': activity_encoded,
+            'objective_encoded': objective_encoded,
+            'age_group': age_group
+        })
+
+        print(f"✓ Profil utilisateur configuré:")
+        print(f"  Genre: {gender} (encoded: {gender_encoded})")
+        print(f"  Âge: {age} ans (groupe: {age_group})")
+        print(f"  Poids: {weight}kg | Taille: {height}cm | IMC: {bmi:.1f}")
+        print(f"  Activité: {activity} (encoded: {activity_encoded})")
+        print(f"  Objectif: {objective} (encoded: {objective_encoded})")
+        print(f"  BMR: {int(bmr)} kcal | TDEE: {int(tdee)} kcal")
+        print(f"  Cible: {int(target_cal)} kcal | P:{int(target_protein)}g G:{int(target_carbs)}g L:{int(target_fat)}g")
+
+        return self.user_profile
+
+    # =============================================
+    # FILTRAGE + SCORING
+    # =============================================
+
+    def _filter_unhealthy_foods(self, df):
+        """Exclut aliments malsains"""
+        mask = df['Food Category'].str.lower().apply(
+            lambda x: not any(bad in x for bad in self.UNHEALTHY_BLACKLIST)
+        )
+        filtered = df[mask].copy()
+        removed = len(df) - len(filtered)
+        if removed > 0:
+            print(f"🚫 {removed} aliments malsains exclus")
+        return filtered
+
+    def _add_user_profile_features(self, df):
+        """
+        AJOUTE les paramètres du profil utilisateur comme colonnes.
+        C'est LA clé pour que les modèles utilisent le profil complet !
+        """
+        profile = self.user_profile
+
+        # Ajouter toutes les infos du profil
+        df['user_weight'] = profile['weight']
+        df['user_height'] = profile['height']
+        df['user_age'] = profile['age']
+        df['user_bmi'] = profile['bmi']
+        df['user_bmr'] = profile['bmr']
+        df['user_tdee'] = profile['tdee']
+        df['user_gender'] = profile['gender_encoded']
+        df['user_activity'] = profile['activity_encoded']
+        df['user_objective'] = profile['objective_encoded']
+        df['user_age_group'] = profile['age_group']
+
+        # Ajouter les cibles nutritionnelles
+        df['user_target_calories'] = profile['target_calories']
+        df['user_target_protein'] = profile['target_protein']
+        df['user_target_carbs'] = profile['target_carbs']
+        df['user_target_fat'] = profile['target_fat']
+
+        return df
+
+    def _calculate_personalized_scores(self, df):
+        """Calcule scores basés sur le profil"""
+        target = self.user_profile
+
+        # Distances normalisées
+        df['protein_fit'] = 1 - abs(df['Protein'] - target['target_protein'] / 6) / (target['target_protein'] / 6 + 1)
+        df['carbs_fit'] = 1 - abs(df['Carbs'] - target['target_carbs'] / 6) / (target['target_carbs'] / 6 + 1)
+        df['fat_fit'] = 1 - abs(df['Fat'] - target['target_fat'] / 6) / (target['target_fat'] / 6 + 1)
+        df['calorie_fit'] = 1 - abs(df['Calories'] - target['target_calories'] / 4) / (
+                    target['target_calories'] / 4 + 1)
+
+        for col in ['protein_fit', 'carbs_fit', 'fat_fit', 'calorie_fit']:
+            df[col] = df[col].clip(0, 1)
+
+        # Score personnalisé selon objectif
+        if target['objective'] == 'perte':
+            df['user_score'] = (
+                    0.35 * df['protein_fit'] +
+                    0.25 * df['calorie_fit'] +
+                    0.20 * (df['Fiber'] / (df['Fiber'].max() + 0.1)) +
+                    0.15 * (1 - df['Sugar'] / (df['Sugar'].max() + 0.1)) +
+                    0.05 * (df['satiety_index'] / (df['satiety_index'].max() + 0.1))
+            )
+        elif target['objective'] == 'gain':
+            df['user_score'] = (
+                    0.30 * df['protein_fit'] +
+                    0.30 * df['carbs_fit'] +
+                    0.25 * (df['Calories'] / (df['Calories'].max() + 0.1)) +
+                    0.15 * df['calorie_fit']
+            )
+        else:
+            df['user_score'] = (
+                    0.30 * df['protein_fit'] +
+                    0.25 * df['carbs_fit'] +
+                    0.25 * df['fat_fit'] +
+                    0.20 * df['calorie_fit']
+            )
+
+        return df
+
+    # =============================================
+    # CLASSIFICATION
+    # =============================================
+
+    def classify_food_role_personalized(self):
+        """Classification avec seuils dynamiques"""
+        df = self._filter_unhealthy_foods(self.df.copy())
+        df = self._add_user_profile_features(df)
+        df = self._calculate_personalized_scores(df)
+
+        target = self.user_profile
+
+        # Seuils dynamiques
+        protein_threshold = target['target_protein'] / 6
+        carbs_threshold = target['target_carbs'] / 6
+        fat_threshold = target['target_fat'] / 6
+        cal_threshold = target['target_calories'] / 4
+
+        if target['objective'] == 'perte':
             conditions = [
-                (self.df['prot_ratio'] > 0.25) & (self.df['Fiber'] > 3) & (self.df['Sugar'] < 5),
-                (self.df['Fat'] > 22) | (self.df['Calories'] > 420),
-                (self.df['Sugar'] > 15)
-            ]
-            choices = ['Privilégier', 'Modération', 'Éviter']
+                (df['Protein'] >= protein_threshold * 0.8) &
+                (df['Calories'] <= cal_threshold * 1.2) &
+                (df['Fiber'] >= 3) &
+                (df['Sugar'] <= 8),
 
-        elif self.current_objective == 'gain':
-            conditions = [
-                (self.df['Calories'] >= 300) & (self.df['Protein'] >= 12),
-                (self.df['Fat'] < 12),
-                (self.df['Sugar'] > 18)
+                (df['Fat'] > fat_threshold * 1.5) |
+                ((df['Sugar'] > 8) & (df['Sugar'] <= 15)),
+
+                (df['Calories'] > cal_threshold * 1.8) |
+                (df['Sugar'] > 15) |
+                (df['Fat'] > fat_threshold * 2)
             ]
-            choices = ['Privilégier', 'Modération', 'Éviter']
+
+        elif target['objective'] == 'gain':
+            conditions = [
+                (df['Calories'] >= cal_threshold * 1.2) &
+                (df['Protein'] >= protein_threshold * 0.7) &
+                (df['Carbs'] >= carbs_threshold * 0.8),
+
+                (df['Calories'] < cal_threshold * 0.8),
+
+                (df['Sugar'] > 20) & (df['Protein'] < protein_threshold * 0.5)
+            ]
 
         else:  # maintien
             conditions = [
-                (self.df['prot_ratio'] > 0.22),
-                (self.df['Fat'] > 25),
-                (self.df['Sugar'] > 12)
+                (df['Protein'] >= protein_threshold * 0.7) &
+                (df['Protein'] <= protein_threshold * 1.3) &
+                (df['Calories'] >= cal_threshold * 0.8) &
+                (df['Calories'] <= cal_threshold * 1.2),
+
+                (df['Fat'] > fat_threshold * 1.5) |
+                (df['Sugar'] > 12),
+
+                (df['Calories'] > cal_threshold * 2) |
+                (df['Sugar'] > 20)
             ]
-            choices = ['Privilégier', 'Modération', 'Éviter']
 
-        self.df['role'] = np.select(conditions, choices, default='Neutre')
+        choices = ['Privilégier', 'Modération', 'Éviter']
+        df['role'] = np.select(conditions, choices, default='Neutre')
 
-        # Encodage & entraînement classifier
-        df_encoded = pd.get_dummies(self.df, columns=['profil', 'objective'], drop_first=True)
-        extra_cols = [c for c in df_encoded.columns if c.startswith('profil_') or c.startswith('objective_')]
+        self.df = df
 
-        # make sure base_features exist
-        for f in self.base_features:
-            if f not in df_encoded.columns:
-                df_encoded[f] = 0.0
+        print(f"✓ Classification personnalisée :")
+        for role in self.class_order:
+            count = len(df[df['role'] == role])
+            pct = count / len(df) * 100
+            print(f"  {role}: {count} ({pct:.1f}%)")
 
-        X = df_encoded[self.base_features + extra_cols]
-        y = df_encoded['role']
+        return df
 
-        self.rf_clf = RandomForestClassifier(n_estimators=300, max_depth=12, random_state=42, class_weight='balanced')
-        self.rf_clf.fit(X, y)
+    # =============================================
+    # KNN AVEC PROFIL INTÉGRÉ
+    # =============================================
 
-        # Sauvegarde modèle et features exactes
-        joblib.dump(self.rf_clf, "models/rf_classifier.pkl")
-        joblib.dump(list(X.columns), "models/rf_classifier_features.pkl")
-        print(f"RF Classifier entraîné et sauvegardé (objectif={self.current_objective}).")
-
-    # ---------------------------
-    # KNN recommender
-    # ---------------------------
-    def train_knn_recommender(self):
+    def train_knn_personalized(self):
         """
-        Entraîne le KNN et sauvegarde :
-          - le scaler (models/scaler.pkl)
-          - le knn (models/knn_recommender.pkl)
-          - la liste exacte des features utilisés par le KNN (models/knn_features.json)
-
-        IMPORTANT : le KNN est entraîné *sur les seules features tabulaires* (base_features + one-hot profil/objective)
-        et **n'inclut pas** de colonnes utilisateur dynamiques (u_calories, ...).
+        KNN qui utilise DIRECTEMENT les paramètres du profil utilisateur.
+        Les aliments similaires sont ceux adaptés au même profil !
         """
-        df_encoded = pd.get_dummies(self.df, columns=['profil', 'objective'], drop_first=True)
-        extra_cols = [c for c in df_encoded.columns if c.startswith('profil_') or c.startswith('objective_')]
+        df = self._filter_unhealthy_foods(self.df.copy())
+        df = self._add_user_profile_features(df)
+        df = self._calculate_personalized_scores(df)
 
-        # ensure base features present
-        for f in self.base_features:
-            if f not in df_encoded.columns:
-                df_encoded[f] = 0.0
+        # Features complètes incluant TOUT le profil
+        features = self.base_features + [
+            'user_score', 'protein_fit', 'carbs_fit', 'fat_fit',
+            'user_weight', 'user_age', 'user_bmi',
+            'user_gender', 'user_activity', 'user_objective',
+            'user_target_protein', 'user_target_carbs', 'user_target_fat'
+        ]
 
-        official_features = self.base_features + extra_cols
-        X = df_encoded[official_features].fillna(0.0)
-
-        # fit scaler and knn
+        X = df[features].fillna(0)
         X_scaled = self.scaler.fit_transform(X)
+
         self.knn = NearestNeighbors(n_neighbors=6, metric='euclidean')
         self.knn.fit(X_scaled)
 
-        # persist
-        joblib.dump(self.knn, "models/knn_recommender.pkl")
-        joblib.dump(self.scaler, "models/scaler.pkl")
-        with open("models/knn_features.json", "w") as f:
-            json.dump(official_features, f)
+        joblib.dump(self.knn, "models/knn_personalized.pkl")
+        joblib.dump(self.scaler, "models/scaler_personalized.pkl")
+        joblib.dump(features, "models/knn_features.pkl")
 
-        print("KNN entraîné avec succès + features sauvegardées.")
+        print(f"✓ KNN entraîné avec {len(features)} features incluant profil complet")
 
-    def recommend_similar(self, food_name, profil=None, objective=None, user_profile=None, top_k=6):
-        """
-        Recommande aliments similaires.
+    def recommend_similar_personalized(self, food_name):
+        """Recommandations basées sur profil ET similarité"""
+        df = self._filter_unhealthy_foods(self.df.copy())
+        df = self._add_user_profile_features(df)
+        df = self._calculate_personalized_scores(df)
 
-        - Utilise strictement les features enregistrées par train_knn_recommender().
-        - Si user_profile est fourni, le classement est post-traité pour favoriser
-          des aliments plus proches des macros cibles (sans modifier la taille d'entrée du KNN).
-        """
-        # find the food row
-        row = self.df[self.df['Food Category'].str.contains(food_name, case=False, na=False)]
+        row = df[df['Food Category'].str.contains(food_name, case=False, na=False)]
         if row.empty:
             return []
 
-        profil_sel = profil or self.current_profile
-        objective_sel = objective or self.current_objective
+        features = joblib.load("models/knn_features.pkl")
+        X = df[features].fillna(0)
+        X_scaled = self.scaler.transform(X)
 
-        subset = self.df[(self.df['profil'] == profil_sel) & (self.df['objective'] == objective_sel)]
-        if subset.empty:
-            subset = self.df.copy()
+        _, indices = self.knn.kneighbors([X_scaled[row.index[0]]])
 
-        # load official features used by KNN
-        features_path = "models/knn_features.json"
-        if os.path.exists(features_path):
-            with open(features_path, 'r') as f:
-                official_features = json.load(f)
-        else:
-            # fallback: try to reconstruct sensibly from df
-            # choose numeric columns present in df that are in base_features or are one-hot profil/objective
-            candidate = [c for c in self.df.columns if self.df[c].dtype != 'object']
-            official_features = [c for c in candidate if (c in self.base_features) or c.startswith('profil_') or c.startswith('objective_')]
-            if not official_features:
-                # absolute fallback
-                official_features = [c for c in self.base_features if c in self.df.columns]
+        recommendations = []
+        for idx in indices[0][1:]:
+            food = df.iloc[idx]
+            recommendations.append({
+                'name': food['Food Category'],
+                'role': food['role'],
+                'user_score': food['user_score'],
+                'calories': food['Calories'],
+                'protein': food['Protein']
+            })
 
-        # ensure present in subset; add missing with zeros
-        for col in official_features:
-            if col not in subset.columns:
-                subset[col] = 0.0
+        return recommendations
 
-        # build X (respecting the exact column order)
-        X = subset[official_features].copy().fillna(0.0)
+    # =============================================
+    # ARBRE AVEC PROFIL UTILISATEUR
+    # =============================================
 
-        # load scaler
-        scaler_path = "models/scaler.pkl"
-        if os.path.exists(scaler_path):
-            scaler = joblib.load(scaler_path)
-            try:
-                X_scaled = scaler.transform(X)
-            except Exception as e:
-                # If feature names mismatch (for example scaler was trained on different columns),
-                # attempt to align columns: pad missing, drop extras, reorder
-                trained_features = None
-                try:
-                    # if scaler was saved from sklearn's StandardScaler after fit, it may have feature_names_in_
-                    trained_features = getattr(scaler, "feature_names_in_", None)
-                except Exception:
-                    trained_features = None
+    def train_decision_tree_personalized(self):
+        """
+        Arbre qui utilise les paramètres du profil ET des features adaptatives.
+        CORRECTION: Utilise les classes présentes dans les données.
+        """
+        df = self._filter_unhealthy_foods(self.df.copy())
+        df = self._add_user_profile_features(df)
+        df = self._calculate_personalized_scores(df)
 
-                if trained_features is not None:
-                    trained_features = list(trained_features)
-                    # add missing cols
-                    for col in trained_features:
-                        if col not in X.columns:
-                            X[col] = 0.0
-                    # drop extras
-                    for col in list(X.columns):
-                        if col not in trained_features:
-                            X.drop(col, axis=1, inplace=True)
-                    # reorder
-                    X = X[trained_features]
-                    X_scaled = scaler.transform(X)
-                else:
-                    # last resort: fit_transform a local scaler (less ideal)
-                    from sklearn.preprocessing import StandardScaler
-                    local_scaler = StandardScaler()
-                    X_scaled = local_scaler.fit_transform(X)
-        else:
-            # no scaler saved -> fit a local one (best-effort)
-            from sklearn.preprocessing import StandardScaler
-            local_scaler = StandardScaler()
-            X_scaled = local_scaler.fit_transform(X)
+        target = self.user_profile
 
-        # load knn
-        knn_path = "models/knn_recommender.pkl"
-        if os.path.exists(knn_path):
-            knn = joblib.load(knn_path)
-        else:
-            # if no knn saved, train new one on-the-fly using X_scaled
-            knn = NearestNeighbors(n_neighbors=min(top_k + 1, len(X_scaled)), metric='euclidean')
-            knn.fit(X_scaled)
+        # Features ADAPTATIVES basées sur le profil
+        protein_threshold = target['target_protein'] / 6
+        carbs_threshold = target['target_carbs'] / 6
+        fat_threshold = target['target_fat'] / 6
+        cal_threshold = target['target_calories'] / 4
 
-        # find index of the requested food within subset
-        try:
-            idx = subset.index.get_loc(row.index[0])
-        except Exception:
-            # fallback: use the first row of X_scaled as query
-            idx = 0
-
-        # ask knn for k+1 neighbors (first is the item itself)
-        k_query = min(top_k + 1, len(X_scaled))
-        distances, indices = knn.kneighbors(X_scaled[idx].reshape(1, -1), n_neighbors=k_query)
-        cand_idx = indices[0]
-
-        # remove the item itself if present
-        cand_idx = [i for i in cand_idx if i != idx]
-        candidates = subset.iloc[cand_idx].copy().reset_index(drop=True)
-
-        # If no user_profile, return top_k directly
-        if (user_profile is None) and (not hasattr(self, '_last_user_profile')):
-            return candidates['Food Category'].tolist()[:top_k]
-
-        # if user_profile not given explicitly but we have a last one, use it
-        if user_profile is None and hasattr(self, '_last_user_profile'):
-            user_profile = self._last_user_profile
-
-        # Re-score candidates by proximity to user's macro targets
-        try:
-            user_vec = np.array([
-                user_profile.get('calories', 0),
-                user_profile.get('protein', 0),
-                user_profile.get('carbs', 0),
-                user_profile.get('fat', 0),
-            ], dtype=float)
-
-            # Build candidate macro vectors
-            cand_macros = candidates[['Calories', 'Protein', 'Carbs', 'Fat']].fillna(0.0).values.astype(float)
-
-            # compute euclidean distance in macro-space (smaller = better)
-            macro_dist = np.linalg.norm((cand_macros - user_vec.reshape(1, -1)), axis=1)
-
-            # we'll combine original KNN distance (if available) and macro distance
-            # normalize both to [0,1]
-            knn_dist = distances[0][1:1 + len(candidates)] if distances.shape[1] > 1 else np.zeros(len(candidates))
-            if len(knn_dist) != len(macro_dist):
-                knn_norm = np.interp(range(len(macro_dist)), [0, len(macro_dist) - 1], [0, 1])
-            else:
-                knn_norm = (knn_dist - np.min(knn_dist)) / (np.ptp(knn_dist) + 1e-9)
-
-            macro_norm = (macro_dist - np.min(macro_dist)) / (np.ptp(macro_dist) + 1e-9)
-
-            # weighting: give primary importance to food similarity (knn) but favor macros moderately
-            alpha = 0.7  # weight for knn distance
-            beta = 0.3   # weight for macro distance
-            combined_score = alpha * knn_norm + beta * macro_norm
-
-            # sort ascending (lower combined_score = better)
-            order = np.argsort(combined_score)
-            sorted_names = candidates['Food Category'].values[order].tolist()
-            return sorted_names[:top_k]
-        except Exception:
-            # if anything fails, fallback to the raw knn candidates
-            return candidates['Food Category'].tolist()[:top_k]
-
-    # ---------------------------
-    # Decision tree explanation
-    # ---------------------------
-    def train_decision_tree(self):
-        df = self.df.copy()
-        df['high_protein'] = (df['Protein'] > 15).astype(int)
-        df['low_sugar'] = (df['Sugar'] < 8).astype(int)
+        df['meets_protein_need'] = (df['Protein'] >= protein_threshold * 0.8).astype(int)
+        df['meets_carbs_need'] = (df['Carbs'] >= carbs_threshold * 0.8).astype(int)
+        df['within_calorie_target'] = (
+                (df['Calories'] >= cal_threshold * 0.7) &
+                (df['Calories'] <= cal_threshold * 1.3)
+        ).astype(int)
+        df['low_sugar'] = (df['Sugar'] < 10).astype(int)
         df['high_fiber'] = (df['Fiber'] > 4).astype(int)
-        df['high_fat'] = (df['Fat'] > 20).astype(int)
+        df['healthy_fat_ratio'] = ((df['Fat'] >= fat_threshold * 0.5) &
+                                   (df['Fat'] <= fat_threshold * 1.5)).astype(int)
 
-        features_tree = ['Calories', 'high_protein', 'low_sugar', 'high_fiber', 'high_fat', 'satiety_index', 'activity_factor']
-        df_encoded = pd.get_dummies(df[features_tree + ['profil', 'objective']], drop_first=True)
+        # Features incluant DIRECTEMENT le profil utilisateur
+        features_tree = [
+            # Features adaptatives
+            'meets_protein_need', 'meets_carbs_need', 'within_calorie_target',
+            'low_sugar', 'high_fiber', 'healthy_fat_ratio',
+            'user_score', 'satiety_index',
+            # Paramètres du profil utilisateur
+            'user_age', 'user_bmi', 'user_gender',
+            'user_activity', 'user_objective',
+            'user_target_protein', 'user_target_calories'
+        ]
 
-        y = df['role'] if 'role' in df.columns else np.zeros(len(df_encoded))
-        self.dt = DecisionTreeClassifier(max_depth=6, min_samples_leaf=5, random_state=42, class_weight='balanced')
-        self.dt.fit(df_encoded, y)
+        X = df[features_tree].fillna(0)
+        y = df['role']
 
-        joblib.dump(self.dt, "models/decision_tree.pkl")
-        joblib.dump(list(df_encoded.columns), "models/tree_features.pkl")
-        print("Decision tree entraîné et sauvegardé.")
+        # Identifier les classes RÉELLEMENT présentes dans les données
+        present_classes = sorted(y.unique())
+
+        # VÉRIFICATION: Au moins 2 classes nécessaires pour un arbre
+        if len(present_classes) < 2:
+            print(f"⚠️ ATTENTION: Seulement {len(present_classes)} classe(s) présente(s): {present_classes}")
+            print(f"   Les règles de classification sont trop strictes pour ce profil.")
+            print(f"   L'arbre ne sera pas entraîné (nécessite au moins 2 classes).")
+
+            # Créer un arbre minimal pour compatibilité
+            from sklearn.dummy import DummyClassifier
+            self.dt = DummyClassifier(strategy='most_frequent')
+            self.dt.fit(X, y)
+
+            joblib.dump(self.dt, "models/decision_tree_personalized.pkl")
+            joblib.dump(features_tree, "models/tree_features_personalized.pkl")
+            joblib.dump(present_classes, "models/tree_classes.pkl")
+
+            return f"Arbre non entraîné: une seule classe présente ({present_classes[0]})\nLes règles de classification nécessitent un ajustement."
+
+        # Encoder uniquement les classes présentes
+        self.label_encoder = LabelEncoder()
+        self.label_encoder.fit(present_classes)
+        y_encoded = self.label_encoder.transform(y)
+
+        self.dt = DecisionTreeClassifier(
+            max_depth=8,
+            min_samples_leaf=15,
+            random_state=42,
+            class_weight='balanced'
+        )
+        self.dt.fit(X, y_encoded)
+
+        joblib.dump(self.dt, "models/decision_tree_personalized.pkl")
+        joblib.dump(features_tree, "models/tree_features_personalized.pkl")
+        joblib.dump(self.label_encoder, "models/label_encoder.pkl")
+        joblib.dump(present_classes, "models/tree_classes.pkl")  # Sauvegarder les classes présentes
+
+        print(f"✓ Arbre entraîné avec {len(features_tree)} features")
+        print(f"  Features profil utilisateur: age, bmi, genre, activité, objectif, cibles nutritionnelles")
+        print(f"  Classes présentes dans ce profil: {', '.join(present_classes)}")
+
+        # Retourner règles avec classes RÉELLEMENT présentes
+        rules_text = export_text(
+            self.dt,
+            feature_names=features_tree,
+            class_names=present_classes,  # Utiliser classes présentes
+            max_depth=6
+        )
+
+        return rules_text
 
     def get_tree_rules(self):
-        if not os.path.exists("models/decision_tree.pkl"):
+        """Récupère les règles avec les bons noms de classes"""
+        if not os.path.exists("models/decision_tree_personalized.pkl"):
             return "Arbre non entraîné."
-        dt = joblib.load("models/decision_tree.pkl")
-        features = joblib.load("models/tree_features.pkl")
-        return export_text(dt, feature_names=features, max_depth=5)
 
-    # ---------------------------
-    # Profil utilisateur runtime
-    # ---------------------------
-    def build_personal_tree(self, user_profile):
-        required = ["weight", "height", "age", "gender", "activity", "objective"]
-        for k in required:
-            if k not in user_profile:
-                raise ValueError(f"user_profile manque la clé '{k}'")
+        dt = joblib.load("models/decision_tree_personalized.pkl")
+        features = joblib.load("models/tree_features_personalized.pkl")
 
-        if not all(k in user_profile for k in ["calories", "protein", "carbs", "fat"]):
-            bmr = calculate_bmr(user_profile["weight"], user_profile["height"], user_profile["age"], user_profile["gender"])
-            activity_map_display = {'sedentaire': "Sédentaire", 'leger': "Léger", 'modere': "Modéré", 'intense': "Intense", 'athlete': "Athlète"}
-            activity_display = activity_map_display.get(user_profile["activity"], "Modéré")
-            tdee = calculate_tdee(bmr, activity_display)
-            macros = get_macro_targets(tdee, user_profile["objective"], user_profile["weight"])
-            user_profile["calories"] = macros["calories"]
-            user_profile["protein"] = macros["protein"]
-            user_profile["carbs"] = macros["carbs"]
-            user_profile["fat"] = macros["fat"]
-
-        df = self.df.copy()
-        df["user_weight"] = float(user_profile["weight"])
-        df["user_height"] = float(user_profile["height"])
-        df["user_age"] = float(user_profile["age"])
-        df["user_is_male"] = 1 if str(user_profile["gender"]).lower().startswith("h") or str(user_profile["gender"]).lower().startswith("m") else 0
-        mapping = {'sedentaire': 1.2, 'leger': 1.4, 'modere': 1.55, 'intense': 1.8, 'athlete': 2.0}
-        df["user_activity_factor"] = mapping.get(user_profile["activity"], 1.55)
-        obj_map = {'perte': -1, 'maintien': 0, 'gain': 1}
-        df["user_objective_val"] = obj_map.get(user_profile["objective"], 0)
-        df["user_calories"] = float(user_profile["calories"])
-        df["user_protein"] = float(user_profile["protein"])
-        df["user_carbs"] = float(user_profile["carbs"])
-        df["user_fat"] = float(user_profile["fat"])
-
-        numeric_food_cols = [
-            "Calories", "Protein", "Carbs", "Fat", "Fiber", "Sugar",
-            "density_kcal_100g", "satiety_index", "balance_score",
-            # nouvelles colonnes dynamiques :
-            "rel_protein", "rel_fat", "rel_carbs", "rel_cal",
-            "sugar_penalty", "fiber_score", "dyn_density"
-        ]
-        for c in numeric_food_cols:
-            if c not in df.columns:
-                df[c] = 0.0
-
-        # 1) Ratios dynamiques en fonction des cibles du user
-        df["rel_protein"] = df["Protein"] / user_profile["protein"]  # % de la cible protéine
-        df["rel_fat"] = df["Fat"] / user_profile["fat"]
-        df["rel_carbs"] = df["Carbs"] / user_profile["carbs"]
-        df["rel_cal"] = df["Calories"] / user_profile["calories"]
-
-        # 2) Importance dynamique du sucre selon objectif
-        if user_profile["objective"] == "maintien":
-            df["sugar_penalty"] = df["Sugar"] * 0.3
-        elif user_profile["objective"] == "gain":
-            df["sugar_penalty"] = df["Sugar"] * 0.1
-        else:  # perte
-            df["sugar_penalty"] = df["Sugar"] * 1.2
-
-        # 3) Fibre pondérée selon objectif
-        if user_profile["objective"] == "perte":
-            df["fiber_score"] = df["Fiber"] * 1.4
-        elif user_profile["objective"] == "maintien":
-            df["fiber_score"] = df["Fiber"] * 1.0
-        else:  # gain
-            df["fiber_score"] = df["Fiber"] * 0.7
-
-        # 4) Densité kcal selon activité
-        activity_boost = {
-            "sedentaire": 0.9,
-            "leger": 1.0,
-            "modere": 1.1,
-            "intense": 1.2,
-            "athlete": 1.4
-        }
-        df["dyn_density"] = df["density_kcal_100g"] * activity_boost[user_profile["activity"]]
-
-        X = df.select_dtypes(include=["number"]).copy()
-
-        if "role" not in df.columns:
-            temp = df.copy()
-            temp["prot_ratio"] = temp["Protein"] * 4 / temp["Calories"].replace(0, 1)
-            temp["role"] = "Neutre"
-            temp.loc[(temp['prot_ratio'] > 0.22), "role"] = "Privilégier"
-            temp.loc[(temp['Fat'] > 25), "role"] = "Modération"
-            temp.loc[(temp['Sugar'] > 12), "role"] = "Éviter"
-            y = temp["role"]
+        # Charger les classes qui étaient présentes lors de l'entraînement
+        if os.path.exists("models/tree_classes.pkl"):
+            class_names = joblib.load("models/tree_classes.pkl")
         else:
-            y = df["role"]
+            # Fallback sur l'ordre par défaut si fichier absent
+            class_names = self.class_order
 
-        X = X.reset_index(drop=True)
-        y = y.reset_index(drop=True)
+        return export_text(
+            dt,
+            feature_names=features,
+            class_names=class_names,
+            max_depth=6
+        )
 
-        tree = DecisionTreeClassifier(max_depth=5, min_samples_leaf=8, class_weight="balanced", random_state=42)
-        tree.fit(X, y)
-
-        self.personal_tree = tree
-        self.personal_tree_features = X.columns.tolist()
-        os.makedirs("models", exist_ok=True)
-        joblib.dump(tree, os.path.join("models", f"personal_tree_{user_profile['activity']}_{user_profile['objective']}.pkl"))
-        joblib.dump(self.personal_tree_features, os.path.join("models", f"tree_features_{user_profile['activity']}_{user_profile['objective']}.pkl"))
-
-        self._last_user_profile = user_profile.copy()
-        return tree
-
-    def get_personal_tree_rules(self, profil=None, objective=None):
-        from sklearn.tree import export_text
-        if not hasattr(self, "personal_tree") or self.personal_tree is None:
-            return "❌ Aucun arbre personnalisé n'est construit.\nClique sur 'Appliquer le profil' → puis 'Construire l’arbre'."
-        if not hasattr(self, "personal_tree_features") or self.personal_tree_features is None:
-            return "❌ Aucune liste de features enregistrée pour l’arbre personnalisé."
-        try:
-            rules = export_text(self.personal_tree, feature_names=self.personal_tree_features)
-            return rules
-        except Exception as e:
-            return f"❌ Erreur lors de l’export des règles : {e}"
-
-    def get_role_subset(self, role_target, profil=None, objective=None):
-        profil = profil or self.current_profile
-        objective = objective or self.current_objective
-        df = self.df.copy()
-        df["prot_ratio"] = (df["Protein"] * 4 / df["Calories"].replace(0, 1)).fillna(0)
-        df["carb_ratio"] = (df["Carbs"] * 4 / df["Calories"].replace(0, 1)).fillna(0)
-        df["fat_ratio"] = (df["Fat"] * 9 / df["Calories"].replace(0, 1)).fillna(0)
-
-        if objective == "perte":
-            conditions = [
-                (df['prot_ratio'] > 0.25) & (df['Fiber'] > 3) & (df['Sugar'] < 5),
-                (df['Fat'] > 22) | (df['Calories'] > 420),
-                (df['Sugar'] > 15)
-            ]
-            choices = ["Privilégier", "Modération", "Éviter"]
-        elif objective == "gain":
-            conditions = [
-                (df['Calories'] >= 300) & (df['Protein'] >= 12),
-                (df['Fat'] < 12),
-                (df['Sugar'] > 18)
-            ]
-            choices = ["Privilégier", "Modération", "Éviter"]
-        else:
-            conditions = [
-                (df['prot_ratio'] > 0.22),
-                (df['Fat'] > 25),
-                (df['Sugar'] > 12)
-            ]
-            choices = ["Privilégier", "Modération", "Éviter"]
-
-        df["role"] = np.select(conditions, choices, default="Neutre")
-        subset = df[(df["profil"] == profil) & (df["objective"] == objective) & (df["role"] == role_target)]
-        if subset.empty:
-            subset = df[df["role"] == role_target]
-        return subset
-
-    def set_user_profile(self, weight, height, age, gender, activity, objective):
-        self.user_weight = weight
-        self.user_height = height
-        self.user_age = age
-        self.user_gender = gender
-        self.user_activity = activity
-        self.user_objective = objective
-
-        bmr = calculate_bmr(weight, height, age, gender)
-        tdee = calculate_tdee(bmr, activity)
-        targets = get_macro_targets(tdee, objective, weight)
-
-        self.df['user_bmr'] = bmr
-        self.df['user_tdee'] = tdee
-        self.df['user_calories'] = targets["calories"]
-        self.df['user_protein'] = targets["protein"]
-        self.df['user_fat'] = targets["fat"]
-        self.df['user_carbs'] = targets["carbs"]
-
-        self.df['user_weight'] = weight
-        self.df['user_height'] = height
-        self.df['user_age'] = age
-        self.df['user_gender'] = 1 if gender.lower().startswith("h") else 0
-
-        mapping = {"Sédentaire": 1.2, "Léger": 1.375, "Modéré": 1.55, "Intense": 1.725, "Athlète": 1.9}
-        self.df['user_activity_factor'] = mapping.get(activity, 1.55)
-
-        obj_enc = {"perte": 0, "maintien": 1, "gain": 2}
-        self.df['user_objective_enc'] = obj_enc.get(objective, 1)
-
-        print("=== Profil COMPLET appliqué ===")
-        print(f"- Poids : {weight} kg")
-        print(f"- Taille : {height} cm")
-        print(f"- Âge : {age}")
-        print(f"- Genre : {gender}")
-        print(f"- Activité : {activity}")
-        print(f"- Objectif : {objective}")
-        print(f"> Calories quotidiennes recommandées : {targets['calories']}")
+    # =============================================
+    # SAUVEGARDE
+    # =============================================
 
     def save_all_models(self):
-        if self.rf_reg is not None:
-            joblib.dump(self.rf_reg, "models/rf_balance.pkl")
-        if self.rf_clf is not None:
-            joblib.dump(self.rf_clf, "models/rf_classifier.pkl")
-        if self.knn is not None:
-            joblib.dump(self.knn, "models/knn_recommender.pkl")
-        if self.dt is not None:
-            joblib.dump(self.dt, "models/decision_tree.pkl")
-        print("Tous les modèles (disponibles) ont été sauvegardés.")
+        """Sauvegarde tous les modèles"""
+        if self.knn:
+            joblib.dump(self.knn, "models/knn_personalized.pkl")
+        if self.dt:
+            joblib.dump(self.dt, "models/decision_tree_personalized.pkl")
+        if self.scaler:
+            joblib.dump(self.scaler, "models/scaler_personalized.pkl")
+        if self.label_encoder:
+            joblib.dump(self.label_encoder, "models/label_encoder.pkl")
+
+        joblib.dump(self.user_profile, "models/user_profile.pkl")
+        print("✓ Tous les modèles sauvegardés")

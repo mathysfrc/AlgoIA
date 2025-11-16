@@ -1,120 +1,221 @@
-# meal_planner.py
+# meal_planner.py - VERSION PERSONNALISÉE
 import pandas as pd
-import joblib
-import os
+import numpy as np
 
 
 class MealPlanner:
-    def __init__(self, nutri_ai):
-        self.ai = nutri_ai
-        self.df = nutri_ai.df
+    """
+    Générateur de plans de repas personnalisés.
+    S'adapte aux besoins nutritionnels individuels.
+    """
 
-        # Charger modèle et features (produits à l'entraînement)
-        if not os.path.exists("models/rf_classifier.pkl"):
-            raise FileNotFoundError("models/rf_classifier.pkl introuvable — entraînez le modèle d'abord (main.py).")
+    # Blacklist d'aliments malsains
+    UNHEALTHY_KEYWORDS = [
+        'mcdo', 'mcdonald', 'burger king', 'kfc', 'pizza hut',
+        'fast food', 'soda', 'coca', 'pepsi', 'candy', 'bonbon',
+        'nuggets', 'fries', 'frites', 'donut'
+    ]
 
-        self.model = joblib.load("models/rf_classifier.pkl")
+    def __init__(self, df):
+        """
+        Initialise avec un DataFrame déjà filtré et scoré par NutriAI.
+        """
+        self.df = df.copy()
 
-        # features sauvegardées lors de l'entraînement
-        if os.path.exists("models/rf_classifier_features.pkl"):
-            model_features = joblib.load("models/rf_classifier_features.pkl")
-        else:
-            # fallback minimal
-            model_features = ['Calories', 'Protein', 'Carbs', 'Fat', 'Fiber', 'Sugar', 'Water', 'density_kcal_100g', 'satiety_index']
+        # Filtrer aliments malsains
+        self.df = self._filter_unhealthy()
 
-        # S'assurer colonnes profil/objective existent
-        if 'profil' not in self.df.columns:
-            self.df['profil'] = 'modere'
-        if 'objective' not in self.df.columns:
-            self.df['objective'] = 'maintien'
-        if 'activity_factor' not in self.df.columns:
-            self.df['activity_factor'] = 1.5
-
-        # Encodage identique à l'entraînement (get_dummies + ajout colonnes manquantes)
-        df_encoded = pd.get_dummies(self.df, columns=['profil', 'objective'], drop_first=True)
-
-        # Créer toute colonne manquante attendue par le modèle
-        for col in model_features:
-            if col not in df_encoded.columns:
-                df_encoded[col] = 0
-
-        # Réordonner et sélectionner
-        df_encoded = df_encoded[model_features]
-
-        # Prédire le rôle
-        self.df['role'] = self.model.predict(df_encoded)
-
-        # Catégories pour génération de repas
-        self.categories = {
-            "Petit-déjeuner": ["Grains", "Fruits", "Dairy"],
-            "Déjeuner": ["Meat", "Fish", "Grains", "Vegetables", "Legumes"],
-            "Dîner": ["Meat", "Fish", "Vegetables", "Grains"],
-            "Collation": ["Fruits", "Nuts", "Dairy", "Grains"]
+        # Catégories d'aliments par type de repas
+        self.meal_categories = {
+            "Petit-déjeuner": ["Grains", "Fruits", "Dairy", "Eggs"],
+            "Déjeuner": ["Meat", "Fish", "Grains", "Vegetables", "Legumes", "Dairy"],
+            "Dîner": ["Meat", "Fish", "Vegetables", "Grains", "Legumes"],
+            "Collation": ["Fruits", "Nuts", "Dairy", "Grains", "Vegetables"]
         }
 
-    def generate_daily_plan(self, target_macros):
+    def _filter_unhealthy(self):
+        """Exclut les aliments de la blacklist"""
+        mask = self.df['Food Category'].str.lower().apply(
+            lambda x: not any(bad in x for bad in self.UNHEALTHY_KEYWORDS)
+        )
+        return self.df[mask]
+
+    def generate_daily_plan_personalized(self, target_macros):
+        """
+        Génère un plan quotidien adapté aux objectifs nutritionnels.
+
+        Args:
+            target_macros: dict avec 'calories', 'protein', 'carbs', 'fat'
+
+        Returns:
+            plan: dict {meal_name: [foods]}
+            totals: dict avec totaux nutritionnels
+        """
         plan = {}
         daily_totals = {"calories": 0, "protein": 0, "carbs": 0, "fat": 0}
         used_foods = set()
 
-        meal_targets = {
-            "Petit-déjeuner": 0.25,
-            "Déjeuner": 0.35,
-            "Dîner": 0.30,
-            "Collation": 0.10
+        # Répartition calorique par repas (personnalisable)
+        meal_distribution = {
+            "Petit-déjeuner": 0.25,  # 25% des calories
+            "Déjeuner": 0.35,  # 35% des calories
+            "Dîner": 0.30,  # 30% des calories
+            "Collation": 0.10  # 10% des calories
         }
 
-        for meal, ratio in meal_targets.items():
-            target = {
+        for meal_name, ratio in meal_distribution.items():
+            # Calculer cibles pour ce repas
+            meal_target = {
                 'calories': target_macros['calories'] * ratio,
                 'protein': target_macros['protein'] * ratio,
                 'carbs': target_macros['carbs'] * ratio,
                 'fat': target_macros['fat'] * ratio
             }
-            foods, totals = self._generate_diverse_meal(target, meal, used_foods)
-            plan[meal] = foods
-            for k in daily_totals:
-                daily_totals[k] += totals[k]
+
+            # Générer le repas
+            foods, meal_totals = self._generate_optimized_meal(
+                meal_target,
+                meal_name,
+                used_foods
+            )
+
+            plan[meal_name] = foods
+
+            # Mettre à jour totaux
+            for nutrient in daily_totals:
+                daily_totals[nutrient] += meal_totals[nutrient]
+
+            # Marquer aliments utilisés
             used_foods.update([f['Food Category'] for f in foods])
 
         return plan, daily_totals
 
-    def _generate_diverse_meal(self, target, meal_type, used_foods):
+    def _generate_optimized_meal(self, target, meal_type, used_foods):
+        """
+        Génère un repas optimisé pour atteindre les cibles nutritionnelles.
+        Utilise un algorithme glouton avec score de pertinence.
+        """
+        # Filtrer candidats par type de repas
         candidates = self.df.copy()
-        if meal_type in self.categories:
+
+        if meal_type in self.meal_categories:
+            pattern = '|'.join(self.meal_categories[meal_type])
             candidates = candidates[
-                candidates['Food Category'].str.contains('|'.join(self.categories[meal_type]), case=False, na=False)]
+                candidates['Food Category'].str.contains(pattern, case=False, na=False)
+            ]
+
+        # Exclure aliments déjà utilisés
         candidates = candidates[~candidates['Food Category'].isin(used_foods)]
 
-        selected = []
-        total = {"calories": 0, "protein": 0, "carbs": 0, "fat": 0}
+        # Priorité aux aliments "Privilégier"
+        candidates = candidates.sort_values(
+            ['role', 'user_score'],
+            ascending=[True, False]  # Privilégier d'abord, puis par score
+        )
+
+        selected_foods = []
+        current_totals = {"calories": 0, "protein": 0, "carbs": 0, "fat": 0}
         roles_used = set()
 
-        for _ in range(3):
-            best = None
-            best_score = float('inf')
-            for _, food in candidates.iterrows():
-                if food['Food Category'] in used_foods or (food['role'] in roles_used and len(roles_used) > 1):
-                    continue
-                temp = total.copy()
-                temp['calories'] += food['Calories']
-                temp['protein'] += food['Protein']
-                temp['carbs'] += food['Carbs']
-                temp['fat'] += food['Fat']
+        # Sélection itérative (3-4 aliments par repas)
+        max_items = 4 if meal_type in ["Déjeuner", "Dîner"] else 3
 
-                error = abs(temp['calories'] - target['calories']) + \
-                        abs(temp['protein'] - target['protein']) + \
-                        abs(temp['carbs'] - target['carbs']) + \
-                        abs(temp['fat'] - target['fat'])
+        for _ in range(max_items):
+            best_food = None
+            best_score = float('inf')
+
+            for _, food in candidates.iterrows():
+                # Éviter duplicata et trop d'aliments "Éviter"
+                if food['Food Category'] in [f['Food Category'] for f in selected_foods]:
+                    continue
+
+                if food['role'] == 'Éviter' and 'Éviter' in roles_used:
+                    continue
+
+                # Simuler ajout
+                temp_totals = current_totals.copy()
+                temp_totals['calories'] += food['Calories']
+                temp_totals['protein'] += food['Protein']
+                temp_totals['carbs'] += food['Carbs']
+                temp_totals['fat'] += food['Fat']
+
+                # Calculer erreur pondérée
+                error = (
+                        abs(temp_totals['calories'] - target['calories']) * 1.0 +
+                        abs(temp_totals['protein'] - target['protein']) * 2.0 +  # Protéines prioritaires
+                        abs(temp_totals['carbs'] - target['carbs']) * 1.5 +
+                        abs(temp_totals['fat'] - target['fat']) * 1.2
+                )
+
+                # Bonus pour score utilisateur élevé
+                error -= food.get('user_score', 0) * 50
+
+                # Pénalité pour aliments "Éviter"
+                if food['role'] == 'Éviter':
+                    error += 200
+
                 if error < best_score:
                     best_score = error
-                    best = food
-            if best is not None:
-                selected.append(best)
-                total['calories'] += best['Calories']
-                total['protein'] += best['Protein']
-                total['carbs'] += best['Carbs']
-                total['fat'] += best['Fat']
-                roles_used.add(best['role'])
+                    best_food = food
 
-        return selected, total
+            # Ajouter meilleur aliment trouvé
+            if best_food is not None:
+                selected_foods.append(best_food.to_dict())
+                current_totals['calories'] += best_food['Calories']
+                current_totals['protein'] += best_food['Protein']
+                current_totals['carbs'] += best_food['Carbs']
+                current_totals['fat'] += best_food['Fat']
+                roles_used.add(best_food['role'])
+
+            else:
+                break  # Plus de candidats valides
+
+        return selected_foods, current_totals
+
+    def adjust_portions(self, foods, target_calories):
+        """
+        Ajuste les portions pour mieux correspondre aux calories cibles.
+        (Optionnel - pour amélioration future)
+        """
+        total_cal = sum(f['Calories'] for f in foods)
+
+        if total_cal == 0:
+            return foods
+
+        ratio = target_calories / total_cal
+
+        # Ajuster proportionnellement (entre 0.5x et 2x)
+        ratio = max(0.5, min(2.0, ratio))
+
+        adjusted = []
+        for food in foods:
+            adj_food = food.copy()
+            adj_food['Calories'] *= ratio
+            adj_food['Protein'] *= ratio
+            adj_food['Carbs'] *= ratio
+            adj_food['Fat'] *= ratio
+            adjusted.append(adj_food)
+
+        return adjusted
+
+    def get_meal_summary(self, foods):
+        """Résumé nutritionnel d'un repas"""
+        totals = {
+            'calories': sum(f['Calories'] for f in foods),
+            'protein': sum(f['Protein'] for f in foods),
+            'carbs': sum(f['Carbs'] for f in foods),
+            'fat': sum(f['Fat'] for f in foods),
+            'fiber': sum(f.get('Fiber', 0) for f in foods),
+            'sugar': sum(f.get('Sugar', 0) for f in foods)
+        }
+
+        # Statistiques supplémentaires
+        avg_score = np.mean([f.get('user_score', 0) for f in foods])
+        roles = [f['role'] for f in foods]
+
+        return {
+            **totals,
+            'avg_user_score': avg_score,
+            'food_count': len(foods),
+            'roles': roles
+        }

@@ -1,415 +1,616 @@
-# app.py
+# app.py - VERSION 100% PERSONNALISÉE AVEC ÉVALUATION
 import streamlit as st
 import pandas as pd
 import joblib
 import os
 import matplotlib.pyplot as plt
-
-from user_profile import calculate_bmr, calculate_tdee, get_macro_targets
-from models import NutriAI
 from meal_planner import MealPlanner
-from sklearn.tree import plot_tree
+from models import NutriAI
+from PIL import Image
 
-# === CONFIGURATION ===
-st.set_page_config(page_title="NutriAI", layout="wide")
-st.title("NutriAI – Recommandations Nutritionnelles Personnalisées")
+# Configuration
+st.set_page_config(page_title="NutriAI Personnalisé", layout="wide")
+st.title("🥗 NutriAI – Recommandations 100% Personnalisées")
 
-# === FONCTION : Affichage du rôle avec couleur ===
-def get_role_display(role):
-    mapping = {
-        "Privilégier": ("Privilégier", "success"),
-        "Éviter": ("Éviter", "error"),
-        "Modération": ("Modération", "warning"),
-        "Neutre": ("Neutre", "secondary")
-    }
-    return mapping.get(role, ("Inconnu", "secondary"))
 
-# === CHARGEMENT DES MODÈLES / OBJET AI ===
+# Chargement du système
 @st.cache_resource
-def load_models():
-    """
-    Charge l'objet NutriAI et, si présents, les modèles sauvegardés.
-    Si certains fichiers manquent, on continue en mode 'on-the-fly'.
-    """
-    model_dir = "models"
+def load_ai_system():
     ai = NutriAI()
-
-    # fichiers potentiels (non obligatoires, on émet seulement un warning)
-    optional_paths = {
-        "rf_balance": os.path.join(model_dir, "rf_balance.pkl"),
-        "rf_classifier": os.path.join(model_dir, "rf_classifier.pkl"),
-        "knn": os.path.join(model_dir, "knn_recommender.pkl"),
-        "scaler": os.path.join(model_dir, "scaler.pkl"),
-        "decision_tree": os.path.join(model_dir, "decision_tree.pkl"),
-        "tree_features": os.path.join(model_dir, "tree_features.pkl"),
-    }
-
-    for name, path in optional_paths.items():
-        if os.path.exists(path):
-            try:
-                if name == "scaler":
-                    ai.scaler = joblib.load(path)
-                elif name == "rf_balance":
-                    ai.rf_reg = joblib.load(path)
-                elif name == "rf_classifier":
-                    ai.rf_clf = joblib.load(path)
-                elif name == "knn":
-                    ai.knn = joblib.load(path)
-                elif name == "decision_tree":
-                    ai.dt = joblib.load(path)
-                elif name == "tree_features":
-                    # stored for legacy; not strictly required
-                    pass
-            except Exception as e:
-                st.warning(f"Impossible de charger {path} : {e}")
-        else:
-            # not present -> ok, we will compute on the fly when needed
-            pass
-
-    # recalculs defensifs sur df
-    df = ai.df.copy()
-    df['prot_ratio'] = df['Protein'] * 4 / df['Calories'].replace(0, pd.NA)
-    df['carb_ratio'] = df['Carbs'] * 4 / df['Calories'].replace(0, pd.NA)
-    df['fat_ratio'] = df['Fat'] * 9 / df['Calories'].replace(0, pd.NA)
-    df = df.fillna(0)
-
-    # si rf_clf est disponible, produire 'role' global (legacy)
-    if ai.rf_clf is not None:
-        try:
-            df_encoded = pd.get_dummies(df, columns=["profil", "objective"], drop_first=True)
-            for col in ai.rf_clf.feature_names_in_:
-                if col not in df_encoded.columns:
-                    df_encoded[col] = 0
-            X = df_encoded[ai.rf_clf.feature_names_in_]
-            df['role'] = ai.rf_clf.predict(X)
-        except Exception as e:
-            st.warning(f"Impossible d'utiliser rf_classifier pour prédire les rôles automatiquement : {e}")
-            df['role'] = 'Neutre'
-    else:
-        df['role'] = 'Neutre'
-
-    ai.df = df
     return ai
 
-ai = load_models()
 
-# === INSTANTIATION DU MealPlanner ===
-# MealPlanner peut accepter soit (ai) soit un chemin ; on essaye les deux pour compatibilité
-try:
-    planner = MealPlanner(ai)  # si ta version attend un objet NutriAI
-except TypeError:
-    try:
-        planner = MealPlanner()  # fallback: constructeur sans argument (utilise data/processed_nutrition.csv)
-    except Exception as e:
-        st.error(f"Impossible d'instancier MealPlanner automatiquement : {e}")
-        st.stop()
+ai = load_ai_system()
 
 # === SIDEBAR : Profil utilisateur ===
 with st.sidebar:
-    st.header("Votre Profil")
+    st.header("👤 Votre Profil")
 
-    weight = st.slider("Poids (kg)", 40, 150, 70)
-    height = st.slider("Taille (cm)", 140, 220, 175)
-    age = st.slider("Âge", 16, 80, 30)
-    gender = st.selectbox("Sexe", ["Homme", "Femme"])
+    col1, col2 = st.columns(2)
+    with col1:
+        weight = st.number_input("Poids (kg)", 40, 150, 70, 1)
+        age = st.number_input("Âge", 16, 80, 30, 1)
+        gender = st.selectbox("Sexe", ["Homme", "Femme"])
 
-    # affichage friendly -> mapping vers les clés utilisées par NutriAI
-    activity_display = ["Sédentaire", "Léger", "Modéré", "Intense", "Athlète"]
-    activity_key_map = {
-        "Sédentaire": "sedentaire",
-        "Léger": "leger",
-        "Modéré": "modere",
-        "Intense": "intense",
-        "Athlète": "athlete"
-    }
-    activity_display_choice = st.selectbox("Activité", activity_display, index=2)
-    activity_key = activity_key_map[activity_display_choice]
+    with col2:
+        height = st.number_input("Taille (cm)", 140, 220, 175, 1)
+        activity = st.selectbox("Activité", [
+            "Sédentaire", "Léger", "Modéré", "Intense", "Athlète"
+        ])
+        objective = st.selectbox("Objectif", [
+            ("perte", "🔥 Perte de poids"),
+            ("maintien", "⚖️ Maintien"),
+            ("gain", "💪 Prise de masse")
+        ], format_func=lambda x: x[1])
 
-    objective = st.selectbox("Objectif", ["perte", "maintien", "gain"])
+    st.divider()
 
-    if st.button("Appliquer le profil"):
-        ai.set_user_profile(
-            weight=weight,
-            height=height,
-            age=age,
-            gender=gender,
-            activity=activity_display_choice,
-            objective=objective
-        )
+    if st.button("🎯 Calculer mes besoins personnalisés", type="primary"):
+        with st.spinner("Calcul en cours..."):
+            # Configuration du profil utilisateur
+            profile = ai.set_user_profile(
+                weight=weight,
+                height=height,
+                age=age,
+                gender=gender,
+                activity=activity,
+                objective=objective[0]
+            )
 
-        # On doit construire user_profile avec macros si déjà calculées
-        if 'macros' in st.session_state:
-            user_profile = {
-                "weight": weight,
-                "height": height,
-                "age": age,
-                "gender": gender,
-                "activity": activity_key,
-                "objective": objective,
-                "calories": st.session_state.macros["calories"],
-                "protein": st.session_state.macros["protein"],
-                "carbs": st.session_state.macros["carbs"],
-                "fat": st.session_state.macros["fat"]
-            }
-            try:
-                ai.build_personal_tree(user_profile)
-                st.success(f"Profil appliqué et arbre construit pour {activity_key}/{objective}")
-            except Exception as e:
-                st.warning(f"Profil appliqué mais erreur arbre : {e}")
+            # Classification personnalisée
+            ai.classify_food_role_personalized()
 
-        else:
-            st.warning("Veuillez d’abord cliquer sur *Calculer mes besoins* avant de construire l’arbre.")
+            # Entraînement KNN personnalisé
+            ai.train_knn_personalized()
 
-    if  st.button("Calculer mes besoins"):
-        ai.set_user_profile(
-            weight=weight,
-            height=height,
-            age=age,
-            gender=gender,
-            activity=activity_display_choice,
-            objective=objective
-        )
+            # Entraînement arbre personnalisé
+            ai.train_decision_tree_personalized()
 
-        # Récupérer les valeurs calculées par NutriAI
-        macros = {
-            "calories": ai.df['user_calories'].iloc[0],
-            "protein": ai.df['user_protein'].iloc[0],
-            "carbs": ai.df['user_carbs'].iloc[0],
-            "fat": ai.df['user_fat'].iloc[0],
-        }
+            st.session_state.profile = profile
+            st.session_state.ai_ready = True
 
-        st.session_state.macros = macros
+        st.success("✅ Profil configuré !")
 
-        st.success(
-            f"**TDEE (objectif inclus)** : {int(macros['calories'])} kcal\n"
-            f"**Macros** : P:{macros['protein']}g | "
-            f"G:{macros['carbs']}g | L:{macros['fat']}g"
-        )
+        # Affichage des besoins
+        st.metric("TDEE", f"{int(profile['tdee'])} kcal")
+        st.metric("Objectif", f"{int(profile['target_calories'])} kcal")
 
-# === ONGLET : Création des tabs ===
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Protéines", f"{int(profile['target_protein'])}g")
+        col2.metric("Glucides", f"{int(profile['target_carbs'])}g")
+        col3.metric("Lipides", f"{int(profile['target_fat'])}g")
+
+# Vérification profil configuré
+if 'ai_ready' not in st.session_state:
+    st.info("👈 Configurez votre profil dans la barre latérale pour commencer")
+    st.stop()
+
+# === ONGLETS ===
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "Recommandations", "Repas", "Analyse Aliment", "Modèles & Performances", "Arbre Explicatif"
+    "🎯 Recommandations",
+    "🍽️ Plan de Repas",
+    "🔍 Analyse Aliment",
+    "🌳 Arbre Explicatif",
+    "📊 Performances & Comparaison"
 ])
 
 # === ONGLET 1 : Recommandations ===
 with tab1:
-    st.subheader("Aliments à privilégier (personnalisé)")
-    if 'macros' in st.session_state:
-        # rôle cible : logique simple (on peut ajuster)
-        if objective == "perte":
-            role_target = "Privilégier"
-        elif objective == "gain":
-            role_target = "Privilégier"
-        else:
-            role_target = "Privilégier"
+    st.header("Aliments Recommandés pour VOUS")
 
-        # on utilise la méthode qui calcule les labels selon le profil/objectif
-        subset = ai.get_role_subset(role_target, profil=ai.current_profile, objective=ai.current_objective)
-        if len(subset) == 0:
-            st.warning(f"Aucun aliment trouvé pour '{role_target}'.")
-        else:
-            st.markdown(f"### Aliments à **{role_target}** pour votre profil `{ai.current_profile}` / `{ai.current_objective}`")
-            foods = subset.sample(n=min(8, len(subset)), replace=False)
-            for _, f in foods.iterrows():
-                with st.expander(f"**{f['Food Category']}** – {f.get('Meal Type', '')}"):
-                    label, color = get_role_display(f.get('role', 'Neutre'))
-                    if color == "success":
-                        st.success(f"Rôle : {label}")
-                    elif color == "error":
-                        st.error(f"Rôle : {label}")
-                    elif color == "warning":
-                        st.warning(f"Rôle : {label}")
-                    else:
-                        st.info(f"Rôle : {label}")
+    profile = st.session_state.profile
 
-                    col1, col2 = st.columns(2)
-                    col1.metric("Calories", f"{f['Calories']:.0f}")
-                    col2.metric("Score d'équilibre", f"{f.get('balance_score', 0.0):.2f}")
-                    # mini résumé nutritionnel
-                    reasons = []
-                    if f['Protein'] > 15: reasons.append("riche en protéines")
-                    if f['Fiber'] > 3: reasons.append("bonnes fibres")
-                    if f['Sugar'] < 5: reasons.append("peu sucré")
-                    if f['Fat'] > 20: reasons.append("gras")
-                    if f['Sugar'] > 15: reasons.append("trop sucré")
-                    if reasons:
-                        st.caption(f"→ {', '.join(reasons)}")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Votre Objectif", f"{int(profile['target_calories'])} kcal/jour")
+    col2.metric("Activité", profile['activity'])
+    col3.metric("IMC", f"{weight / (height / 100) ** 2:.1f}")
+
+    st.divider()
+
+    # Filtrer aliments selon rôle
+    role_filter = st.radio(
+        "Afficher les aliments à :",
+        ["Privilégier", "Modération", "Neutre", "Éviter"],
+        horizontal=True
+    )
+
+    foods = ai.df[ai.df['role'] == role_filter].sort_values('user_score', ascending=False)
+
+    if len(foods) == 0:
+        st.warning(f"Aucun aliment '{role_filter}' trouvé.")
+    else:
+        st.subheader(f"{len(foods)} aliments à {role_filter}")
+
+        # Top 10
+        for idx, (_, food) in enumerate(foods.head(10).iterrows(), 1):
+            with st.expander(
+                    f"#{idx} **{food['Food Category']}** "
+                    f"({food['Meal Type']}) - Score: {food['user_score']:.2f}"
+            ):
+                col1, col2, col3, col4 = st.columns(4)
+                col1.metric("Calories", f"{food['Calories']:.0f}")
+                col2.metric("Protéines", f"{food['Protein']:.1f}g")
+                col3.metric("Glucides", f"{food['Carbs']:.1f}g")
+                col4.metric("Lipides", f"{food['Fat']:.1f}g")
+
+                st.progress(food['user_score'], "Score de pertinence pour VOUS")
+
+                # Pourquoi cet aliment ?
+                reasons = []
+                if food['protein_fit'] > 0.7:
+                    reasons.append("✓ Protéines adaptées")
+                if food['calorie_fit'] > 0.7:
+                    reasons.append("✓ Calories appropriées")
+                if food['Fiber'] > 4:
+                    reasons.append("✓ Riche en fibres")
+                if food['Sugar'] < 8:
+                    reasons.append("✓ Faible en sucre")
+                if food['satiety_index'] > 2:
+                    reasons.append("✓ Effet satiété élevé")
+
+                if reasons:
+                    st.info("Pourquoi cet aliment ? " + " | ".join(reasons))
 
 # === ONGLET 2 : Plan de repas ===
 with tab2:
-    st.subheader("Plan Nutritionnel Journalier (personnalisé)")
-    if 'macros' in st.session_state and st.button("Générer mon plan complet"):
-        try:
-            plan, totals = planner.generate_daily_plan(st.session_state.macros, profil=ai.current_profile, objective=ai.current_objective)
-        except TypeError:
-            # fallback si MealPlanner n'accepte pas ces arguments
-            plan, totals = planner.generate_daily_plan(st.session_state.macros)
+    st.header("Plan Nutritionnel Journalier Personnalisé")
 
+    profile = st.session_state.profile
+
+    if st.button("📅 Générer mon plan complet", type="primary"):
+        planner = MealPlanner(ai.df)
+
+        target_macros = {
+            'calories': profile['target_calories'],
+            'protein': profile['target_protein'],
+            'carbs': profile['target_carbs'],
+            'fat': profile['target_fat']
+        }
+
+        with st.spinner("Génération du plan optimal..."):
+            plan, totals = planner.generate_daily_plan_personalized(target_macros)
+
+        st.success("✅ Plan généré avec succès !")
+
+        # Affichage par repas
         for meal, foods in plan.items():
-            total_cal = sum(float(f['Calories']) for f in foods)
-            with st.expander(f"**{meal}** – {total_cal:.0f} kcal"):
-                for f in foods:
-                    score = f.get('balance_score', 0.7)
-                    label, color = get_role_display(f.get('role', 'Neutre'))
-                    line = f"{label} **{f['Food Category']}** – {f['Calories']:.0f} kcal | P:{f['Protein']:.0f}g G:{f['Carbs']:.0f}g L:{f['Fat']:.0f}g | Score: {score:.2f}"
-                    if color == "success":
-                        st.success(line)
-                    elif color == "error":
-                        st.error(line)
-                    elif color == "warning":
-                        st.warning(line)
-                    else:
-                        st.info(line)
+            total_cal = sum(f['Calories'] for f in foods)
 
-        st.success(f"**Total jour** : {totals['calories']:.0f} kcal | "
-                   f"P:{totals['protein']:.0f}g | G:{totals['carbs']:.0f}g | L:{totals['fat']:.0f}g")
+            with st.expander(f"**{meal}** – {total_cal:.0f} kcal", expanded=True):
+                for food in foods:
+                    role_emoji = {
+                        'Privilégier': '✅',
+                        'Modération': '⚠️',
+                        'Neutre': 'ℹ️',
+                        'Éviter': '❌'
+                    }.get(food['role'], '•')
 
-        # graphique macros (matplotlib)
-        fig, ax = plt.subplots(figsize=(6, 4))
-        labels = ['Protéines', 'Glucides', 'Lipides']
-        cible = [st.session_state.macros['protein'], st.session_state.macros['carbs'], st.session_state.macros['fat']]
-        reel = [totals['protein'], totals['carbs'], totals['fat']]
-        x = range(len(labels))
-        ax.bar(x, cible, width=0.4, label='Cible')
-        ax.bar([i + 0.4 for i in x], reel, width=0.4, label='Réel')
-        ax.set_ylabel('grammes')
-        ax.set_xticks([i + 0.2 for i in x])
-        ax.set_xticklabels(labels)
-        ax.legend()
-        st.pyplot(fig)
+                    st.markdown(
+                        f"{role_emoji} **{food['Food Category']}** "
+                        f"({food['role']}) - "
+                        f"{food['Calories']:.0f} kcal | "
+                        f"P:{food['Protein']:.0f}g "
+                        f"G:{food['Carbs']:.0f}g "
+                        f"L:{food['Fat']:.0f}g | "
+                        f"Score: {food.get('user_score', 0):.2f}"
+                    )
 
-with tab3:
-    st.subheader("Analyse d’un aliment")
-    food_name = st.text_input("Rechercher un aliment")
-    if food_name:
-        matches = ai.df[ai.df['Food Category'].str.contains(food_name, case=False, na=False)]
-        if not matches.empty:
-            f = matches.iloc[0]
+        # Comparaison cible vs réel
+        st.divider()
+        st.subheader("📊 Bilan Nutritionnel")
 
-            # ---- Rôle personnalisé EXACTEMENT comme TAB 1 ----
-            try:
-                subset_single = ai.get_role_subset(
-                    role=f.get('role', 'Neutre'),
-                    profil=ai.current_profile,
-                    objective=ai.current_objective
-                )
+        col1, col2 = st.columns(2)
 
-                role_label = subset_single[subset_single['Food Category'] == f['Food Category']]['role'].values
-                role_label = role_label[0] if len(role_label) > 0 else f.get('role', 'Neutre')
-
-            except Exception:
-                role_label = f.get('role', 'Neutre')
-
-            # Affichage du rôle
-            label, color = get_role_display(role_label)
-            if color == "success":
-                st.success(f"Rôle : {label}")
-            elif color == "error":
-                st.error(f"Rôle : {label}")
-            elif color == "warning":
-                st.warning(f"Rôle : {label}")
-            else:
-                st.info(f"Rôle : {label}")
-
-            # ---- Infos nutritionnelles ----
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Calories", f"{f['Calories']:.0f}")
-            col2.metric("Score Équilibre", f"{f.get('balance_score', 0.0):.2f}")
-            col3.metric("Satiété /100kcal", f"{f.get('satiety_index', 0.0):.1f}")
-
-            st.write("**Ratios clés** :")
-            st.write(f"• Protéines : {f.get('prot_ratio',0):.1%}")
-            st.write(f"• Glucides : {f.get('carb_ratio',0):.1%}")
-            st.write(f"• Lipides : {f.get('fat_ratio',0):.1%}")
-            st.write(f"• Densité : {f.get('density_kcal_100g',0):.1f} kcal/100g")
-
-            # ---- Similarité ----
-            st.write("**Aliments similaires (personnalisé)** :")
-            similar = ai.recommend_similar(
-                f['Food Category'],
-                profil=ai.current_profile,
-                objective=ai.current_objective,
-                user_profile=ai._last_user_profile
+        with col1:
+            st.metric(
+                "Calories totales",
+                f"{totals['calories']:.0f} kcal",
+                f"{totals['calories'] - target_macros['calories']:.0f} kcal"
+            )
+            st.metric(
+                "Protéines",
+                f"{totals['protein']:.0f}g",
+                f"{totals['protein'] - target_macros['protein']:.0f}g"
             )
 
-            # ---- On ne garde que les “Privilégier” (COMME TAB 1) ----
-            filtered_similar = []
+        with col2:
+            st.metric(
+                "Glucides",
+                f"{totals['carbs']:.0f}g",
+                f"{totals['carbs'] - target_macros['carbs']:.0f}g"
+            )
+            st.metric(
+                "Lipides",
+                f"{totals['fat']:.0f}g",
+                f"{totals['fat'] - target_macros['fat']:.0f}g"
+            )
 
-            for sim_name in similar:
-                sim_row = ai.df[ai.df['Food Category'] == sim_name]
-                if sim_row.empty:
-                    continue
-                sim = sim_row.iloc[0]
+        # Graphique comparatif
+        fig, ax = plt.subplots(figsize=(10, 5))
 
-                sim_role = ai.get_role_subset(
-                    "Privilégier",
-                    profil=ai.current_profile,
-                    objective=ai.current_objective
+        labels = ['Protéines', 'Glucides', 'Lipides']
+        cible = [target_macros['protein'], target_macros['carbs'], target_macros['fat']]
+        reel = [totals['protein'], totals['carbs'], totals['fat']]
+
+        x = range(len(labels))
+        width = 0.35
+
+        ax.bar([i - width / 2 for i in x], cible, width, label='Objectif', color='#4CAF50', alpha=0.8)
+        ax.bar([i + width / 2 for i in x], reel, width, label='Réel', color='#2196F3', alpha=0.8)
+
+        ax.set_ylabel('Grammes', fontsize=12)
+        ax.set_xlabel('Macronutriments', fontsize=12)
+        ax.set_title('Comparaison Objectif vs Réel', fontsize=14, fontweight='bold')
+        ax.set_xticks(x)
+        ax.set_xticklabels(labels)
+        ax.legend()
+        ax.grid(axis='y', alpha=0.3)
+
+        st.pyplot(fig)
+
+# === ONGLET 3 : Analyse aliment ===
+with tab3:
+    st.header("🔍 Analyse Détaillée d'un Aliment")
+
+    food_name = st.text_input("Rechercher un aliment", placeholder="Ex: poulet, riz, banane...")
+
+    if food_name:
+        matches = ai.df[ai.df['Food Category'].str.contains(food_name, case=False, na=False)]
+
+        if matches.empty:
+            st.warning("Aucun aliment trouvé. Essayez un autre terme.")
+        else:
+            # Prendre le meilleur match
+            food = matches.sort_values('user_score', ascending=False).iloc[0]
+
+            # Header
+            role_color = {
+                'Privilégier': 'green',
+                'Modération': 'orange',
+                'Neutre': 'blue',
+                'Éviter': 'red'
+            }
+
+            st.markdown(f"### {food['Food Category']}")
+            st.markdown(f"**Rôle:** :{role_color[food['role']]}[{food['role']}]")
+            st.markdown(f"**Type de repas:** {food['Meal Type']}")
+
+            st.divider()
+
+            # Métriques
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("Calories", f"{food['Calories']:.0f}")
+            col2.metric("Protéines", f"{food['Protein']:.1f}g")
+            col3.metric("Glucides", f"{food['Carbs']:.1f}g")
+            col4.metric("Lipides", f"{food['Fat']:.1f}g")
+
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Fibres", f"{food['Fiber']:.1f}g")
+            col2.metric("Sucres", f"{food['Sugar']:.1f}g")
+            col3.metric("Score perso", f"{food['user_score']:.2f}")
+
+            # Analyse de pertinence pour VOUS
+            st.subheader("📈 Pertinence pour votre profil")
+
+            profile = st.session_state.profile
+
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.metric(
+                    "Fit Protéines",
+                    f"{food['protein_fit']:.0%}",
+                    f"Cible: {profile['target_protein'] / 6:.0f}g/repas"
+                )
+                st.metric(
+                    "Fit Glucides",
+                    f"{food['carbs_fit']:.0%}",
+                    f"Cible: {profile['target_carbs'] / 6:.0f}g/repas"
                 )
 
-                if sim_name in sim_role["Food Category"].values:
-                    filtered_similar.append(sim_name)
+            with col2:
+                st.metric(
+                    "Fit Lipides",
+                    f"{food['fat_fit']:.0%}",
+                    f"Cible: {profile['target_fat'] / 6:.0f}g/repas"
+                )
+                st.metric(
+                    "Fit Calories",
+                    f"{food['calorie_fit']:.0%}",
+                    f"Cible: {profile['target_calories'] / 4:.0f} kcal/repas"
+                )
 
-            # ---- Affichage final ----
-            if len(filtered_similar) == 0:
-                st.info("Aucun aliment recommandé similaire trouvé.")
-            else:
-                for sim_name in filtered_similar[:6]:
-                    st.success(f"→ {sim_name} – Privilégier")
+            # Recommandations similaires
+            st.subheader("🔄 Aliments Similaires Recommandés")
 
-# === ONGLET 4 : Performances ===
+            similar = ai.recommend_similar_personalized(food['Food Category'])
+
+            if similar:
+                for sim in similar[:5]:
+                    role_emoji = {
+                        'Privilégier': '✅',
+                        'Modération': '⚠️',
+                        'Neutre': 'ℹ️',
+                        'Éviter': '❌'
+                    }.get(sim['role'], '•')
+
+                    st.markdown(
+                        f"{role_emoji} **{sim['name']}** - "
+                        f"{sim['role']} | "
+                        f"Score: {sim['user_score']:.2f} | "
+                        f"{sim['calories']:.0f} kcal, {sim['protein']:.0f}g protéines"
+                    )
+
+# === ONGLET 4 : Arbre explicatif ===
 with tab4:
-    st.header("Performances des Modèles ML")
-    col1, col2 = st.columns(2)
+    st.header("🌳 Arbre de Décision Personnalisé")
 
-    with col1:
-        st.subheader("Random Forest Regressor")
-        if ai.rf_reg is not None:
-            st.metric("MAE", "0.0108 (pré-enregistré)")
-            st.code("n_estimators: 300\nmax_depth: 15\nmin_samples_split: 2")
-        else:
-            st.info("RF Regressor non chargé — exécute 'main.py' pour entraîner.")
+    st.info(
+        "Cet arbre est **unique à votre profil**. "
+        "Les critères incluent DIRECTEMENT : âge, poids, IMC, genre, activité, objectif, et vos besoins nutritionnels calculés."
+    )
 
-    with col2:
-        st.subheader("Random Forest Classifier")
-        if ai.rf_clf is not None:
-            st.write("**Accuracy : estimée**")
-            # tu peux afficher un rapport réel si tu sauvegardes les métriques
-            data = {
-                "": ["Privilégier", "Modération", "Neutre", "Éviter"],
-                "Classe": ["Privilégier", "Modération", "Neutre", "Éviter"],
-                "Précision": [1.00, 0.96, 0.97, 1.00]
-            }
-            df_report = pd.DataFrame(data).set_index("")
-            st.table(df_report)
-        else:
-            st.info("RF Classifier non chargé — labels calculés dynamiquement selon règles.")
+    profile = st.session_state.profile
 
-# === ONGLET 5 : Arbre explicatif personnalisé ===
+    # Afficher TOUS les paramètres du profil utilisés
+    st.subheader("📋 Paramètres de Votre Profil Utilisés dans l'Arbre")
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Âge", f"{profile['age']} ans")
+    col1.metric("Genre", profile['gender'])
+    col2.metric("Poids", f"{profile['weight']} kg")
+    col2.metric("IMC", f"{profile['bmi']:.1f}")
+    col3.metric("Activité", profile['activity'])
+    col3.metric("TDEE", f"{int(profile['tdee'])} kcal")
+    col4.metric("Objectif", profile['objective'])
+    col4.metric("Cible", f"{int(profile['target_calories'])} kcal")
+
+    st.divider()
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Protéines/repas", f"{profile['target_protein'] / 6:.0f}g")
+    col2.metric("Glucides/repas", f"{profile['target_carbs'] / 6:.0f}g")
+    col3.metric("Calories/repas", f"{profile['target_calories'] / 4:.0f} kcal")
+
+    st.divider()
+
+    if os.path.exists("models/decision_tree_personalized.pkl"):
+        try:
+            dt = joblib.load("models/decision_tree_personalized.pkl")
+            features = joblib.load("models/tree_features_personalized.pkl")
+
+            # Charger les classes présentes lors de l'entraînement
+            if os.path.exists("models/tree_classes.pkl"):
+                tree_classes = joblib.load("models/tree_classes.pkl")
+            else:
+                tree_classes = ['Privilégier', 'Modération', 'Neutre', 'Éviter']
+
+            # Règles textuelles
+            st.subheader("📋 Règles de Décision")
+
+            from sklearn.tree import export_text
+
+            rules = export_text(dt, feature_names=features, class_names=tree_classes, max_depth=5)
+            st.code(rules, language="text")
+
+            # Note sur les classes
+            st.info(f"Classes présentes dans ce modèle : {', '.join(tree_classes)}")
+
+            # Visualisation graphique
+            st.subheader("📊 Visualisation de l'Arbre")
+
+            from sklearn.tree import plot_tree
+
+            fig, ax = plt.subplots(figsize=(20, 12))
+            plot_tree(
+                dt,
+                feature_names=features,
+                class_names=tree_classes,
+                filled=True,
+                rounded=True,
+                fontsize=10,
+                ax=ax,
+                proportion=True
+            )
+            plt.tight_layout()
+            st.pyplot(fig)
+
+            # Importance des features
+            st.subheader("⭐ Importance des Critères")
+
+            importance_df = pd.DataFrame({
+                'Critère': features,
+                'Importance': dt.feature_importances_
+            }).sort_values('Importance', ascending=False)
+
+            fig, ax = plt.subplots(figsize=(10, 6))
+            ax.barh(importance_df['Critère'], importance_df['Importance'], color='#4CAF50')
+            ax.set_xlabel('Importance')
+            ax.set_title('Importance des Critères dans la Classification')
+            ax.grid(axis='x', alpha=0.3)
+            plt.tight_layout()
+            st.pyplot(fig)
+
+        except Exception as e:
+            st.error(f"Erreur lors du chargement de l'arbre : {e}")
+    else:
+        st.warning("L'arbre n'a pas encore été entraîné. Configurez votre profil d'abord.")
+
+# === ONGLET 5 : Évaluation et Comparaison ===
 with tab5:
-    st.header("Arbre de Décision Personnalisé (profil / objectif)")
+    st.header("📊 Performances et Comparaison des Modèles")
+
     st.markdown("""
-    **Légende :**  
-    - **Privilégier** → Aliments à favoriser  
-    - **Modération** → À consommer avec parcimonie  
-    - **Neutre** → Ni bon ni mauvais  
-    - **Éviter** → À éviter
+    Cette section présente une **évaluation scientifique rigoureuse** des différents 
+    modèles de Machine Learning utilisés dans NutriAI. Tous les modèles ont été 
+    optimisés via **GridSearchCV** et validés par **validation croisée**.
     """)
 
-    try:
-        rules = ai.get_personal_tree_rules(profil=ai.current_profile, objective=ai.current_objective)
-        st.code(rules, language="text")
-        # si un arbre existe on peut aussi l'afficher graphiquement
-        key = os.path.join("models", f"personal_tree_{ai.current_profile}_{ai.current_objective}.pkl")
-        feat_key = os.path.join("models", f"tree_features_{ai.current_profile}_{ai.current_objective}.pkl")
-        if os.path.exists(key) and os.path.exists(feat_key):
-            dt = joblib.load(key)
-            feature_names = joblib.load(feat_key)
-            fig, ax = plt.subplots(figsize=(16, 10))
-            plot_tree(ai.personal_tree, feature_names=ai.personal_tree_features, class_names=ai.personal_tree.classes_,
-                      filled=True, rounded=True, fontsize=8, ax=ax, proportion=True)
-            st.pyplot(fig)
+    # Vérifier si l'évaluation a déjà été effectuée
+    if not os.path.exists("models/model_comparison.csv"):
+        st.warning("⚠️ Les modèles n'ont pas encore été évalués.")
+        st.info(
+            "💡 L'évaluation prendra 5-10 minutes et testera 4 algorithmes différents avec optimisation des hyperparamètres.")
+
+        if st.button("🚀 Lancer l'Évaluation Complète", type="primary"):
+            with st.spinner("Évaluation en cours... Cela peut prendre plusieurs minutes."):
+                from model_evaluation import run_full_evaluation
+
+                # Lancer l'évaluation
+                evaluator, comparison_df = run_full_evaluation(
+                    ai.df,
+                    st.session_state.profile
+                )
+
+                st.session_state.evaluation_done = True
+                st.rerun()
+    else:
+        st.success("✅ Évaluation disponible")
+
+        # === 1. TABLEAU COMPARATIF ===
+        st.subheader("📋 Tableau Comparatif des Modèles")
+
+        comparison_df = pd.read_csv("models/model_comparison.csv")
+
+        # Formater le tableau
+        styled_df = comparison_df.style.highlight_max(
+            subset=['Accuracy', 'F1-Score', 'Precision', 'Recall'],
+            color='lightgreen'
+        ).format({
+            'Accuracy': '{:.4f}',
+            'F1-Score': '{:.4f}',
+            'Precision': '{:.4f}',
+            'Recall': '{:.4f}',
+            'Temps Train (s)': '{:.2f}',
+            'Temps Inférence (s)': '{:.4f}'
+        })
+
+        st.dataframe(styled_df, use_container_width=True)
+
+        # Identifier le meilleur
+        best_idx = comparison_df['F1-Score'].idxmax()
+        best_model = comparison_df.loc[best_idx, 'Modèle']
+        best_f1 = comparison_df.loc[best_idx, 'F1-Score']
+
+        st.success(f"🏆 **Meilleur modèle :** {best_model} (F1-Score: {best_f1:.4f})")
+
+        st.divider()
+
+        # === 2. GRAPHIQUES DE PERFORMANCE ===
+        st.subheader("📈 Visualisations des Performances")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            if os.path.exists("models/performance_comparison.png"):
+                st.image("models/performance_comparison.png", caption="Comparaison des Métriques")
+            else:
+                st.warning("Graphique non disponible")
+
+        with col2:
+            if os.path.exists("models/training_time_comparison.png"):
+                st.image("models/training_time_comparison.png", caption="Temps d'Entraînement")
+            else:
+                st.warning("Graphique non disponible")
+
+        st.divider()
+
+        # === 3. MATRICES DE CONFUSION ===
+        st.subheader("🎯 Matrices de Confusion")
+
+        if os.path.exists("models/confusion_matrices.png"):
+            st.image("models/confusion_matrices.png", use_column_width=True)
+            st.caption(
+                "Matrices de confusion pour chaque modèle - montre les prédictions correctes (diagonale) et erreurs")
         else:
-            st.info("Arbre personnalisé construit à la volée (voir règles ci-dessus).")
-    except Exception as e:
-        st.error(f"Erreur lors de la génération de l'arbre personnalisé : {e}")
+            st.warning("Matrices de confusion non disponibles")
+
+        st.divider()
+
+        # === 4. RAPPORT DÉTAILLÉ ===
+        st.subheader("📄 Rapport Détaillé")
+
+        if os.path.exists("models/evaluation_report.txt"):
+            with open("models/evaluation_report.txt", 'r', encoding='utf-8') as f:
+                report_content = f.read()
+
+            with st.expander("📖 Voir le rapport complet", expanded=False):
+                st.text(report_content)
+
+            # Bouton téléchargement
+            st.download_button(
+                label="📥 Télécharger le rapport",
+                data=report_content,
+                file_name="nutriai_evaluation_report.txt",
+                mime="text/plain"
+            )
+        else:
+            st.warning("Rapport détaillé non disponible")
+
+        st.divider()
+
+        # === 5. ANALYSE DES RÉSULTATS ===
+        st.subheader("🔍 Analyse des Résultats")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.markdown("### Points Forts")
+            st.markdown(f"""
+            - ✅ **{len(comparison_df)} modèles** testés et comparés
+            - ✅ Optimisation automatique des hyperparamètres
+            - ✅ Validation croisée 5-fold
+            - ✅ Métriques multiples (Accuracy, F1, Precision, Recall)
+            - ✅ Modèles adaptés au profil utilisateur
+            """)
+
+        with col2:
+            st.markdown("### Insights")
+
+            # Calculer quelques stats
+            avg_accuracy = comparison_df['Accuracy'].mean()
+            avg_f1 = comparison_df['F1-Score'].mean()
+            fastest_model = comparison_df.loc[comparison_df['Temps Train (s)'].idxmin(), 'Modèle']
+            slowest_model = comparison_df.loc[comparison_df['Temps Train (s)'].idxmax(), 'Modèle']
+
+            st.markdown(f"""
+            - 📊 Accuracy moyenne: **{avg_accuracy:.3f}**
+            - 📊 F1-Score moyen: **{avg_f1:.3f}**
+            - ⚡ Plus rapide: **{fastest_model}**
+            - 🐢 Plus lent: **{slowest_model}**
+            - 🎯 Meilleur: **{best_model}**
+            """)
+
+        st.divider()
+
+        # === 6. RE-ÉVALUATION ===
+        st.subheader("🔄 Re-évaluation")
+
+        col1, col2 = st.columns([3, 1])
+
+        with col1:
+            st.info("💡 Vous pouvez relancer l'évaluation si vous avez modifié votre profil ou les données.")
+
+        with col2:
+            if st.button("🔄 Re-évaluer", type="secondary"):
+                # Supprimer anciens fichiers
+                files_to_remove = [
+                    "models/model_comparison.csv",
+                    "models/confusion_matrices.png",
+                    "models/performance_comparison.png",
+                    "models/training_time_comparison.png",
+                    "models/evaluation_report.txt"
+                ]
+
+                for f in files_to_remove:
+                    if os.path.exists(f):
+                        os.remove(f)
+
+                st.rerun()
+
+# Footer
+st.divider()
+st.caption(
+    "💡 NutriAI Personnalisé - Tous les modèles s'adaptent à VOTRE profil unique. "
+    "Changez vos paramètres dans la barre latérale pour voir les recommandations évoluer."
+)
