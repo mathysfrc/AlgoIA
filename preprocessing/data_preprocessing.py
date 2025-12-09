@@ -26,7 +26,7 @@ def discretize_nutrients(df):
     df['fiber_level'] = pd.cut(df['Fiber'], bins=[0, 2, 5, 20], labels=['Faible', 'Moyen', 'Élevé'])
     return df
 
-def load_and_clean(filepath="data/food_data.csv"):
+def load_and_clean(filepath="data/final_food.csv"):
     df = pd.read_csv(filepath)
     df = df.dropna().copy()
     df = df[df['Calories'] > 0]
@@ -86,3 +86,54 @@ def enrich_with_profiles(df):
 
     df_aug = pd.DataFrame(augmented_rows)
     return df_aug
+
+
+def add_noise_to_nutritional_data(df, noise_level=0.05, random_seed=42):
+    """
+    Ajoute du bruit gaussien aux valeurs nutritionnelles pour rendre les résultats plus réalistes
+    
+    Args:
+        df: DataFrame avec données nutritionnelles
+        noise_level: Niveau de bruit (écart-type relatif, ex: 0.05 = 5%)
+        random_seed: Seed pour reproductibilité
+    
+    Returns:
+        DataFrame avec bruit ajouté
+    """
+    np.random.seed(random_seed)
+    df_noisy = df.copy()
+    
+    # Colonnes nutritionnelles à perturber
+    nutritional_cols = ['Calories', 'Protein', 'Carbs', 'Fat', 'Fiber', 'Sugar', 'Water']
+    
+    for col in nutritional_cols:
+        if col in df_noisy.columns:
+            # Bruit gaussien avec écart-type = noise_level * valeur
+            noise = np.random.normal(0, noise_level, size=len(df_noisy))
+            df_noisy[col] = df_noisy[col] * (1 + noise)
+            
+            # S'assurer que les valeurs restent positives
+            df_noisy[col] = np.maximum(df_noisy[col], 0)
+    
+    # Recalculer les features dérivées
+    if 'Calories' in df_noisy.columns and 'Protein' in df_noisy.columns:
+        df_noisy['prot_ratio'] = df_noisy['Protein'] * 4 / (df_noisy['Calories'] + 1e-6)
+        df_noisy['carb_ratio'] = df_noisy['Carbs'] * 4 / (df_noisy['Calories'] + 1e-6)
+        df_noisy['fat_ratio'] = df_noisy['Fat'] * 9 / (df_noisy['Calories'] + 1e-6)
+        
+        if 'Fiber' in df_noisy.columns:
+            df_noisy['fiber_per_100kcal'] = df_noisy['Fiber'] / ((df_noisy['Calories'] / 100) + 1e-6)
+        if 'Sugar' in df_noisy.columns:
+            df_noisy['sugar_per_100kcal'] = df_noisy['Sugar'] / ((df_noisy['Calories'] / 100) + 1e-6)
+        
+        df_noisy['density_kcal_100g'] = df_noisy['Calories'] / 100
+        
+        if all(col in df_noisy.columns for col in ['Protein', 'Fiber', 'Water', 'Sugar', 'Calories']):
+            df_noisy['satiety_index'] = (
+                df_noisy['Protein'] * 1.0 +
+                df_noisy['Fiber'] * 0.8 +
+                df_noisy['Water'] * 0.05 -
+                df_noisy['Sugar'] * 0.3
+            ) / ((df_noisy['Calories'] / 100) + 1)
+    
+    return df_noisy

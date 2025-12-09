@@ -1,10 +1,10 @@
-# 🥗 NutriAI - Système de Recommandation Alimentaire Personnalisé
+# NutriAI - Système de Recommandation Alimentaire Personnalisé
 
-## 📋 Description du Projet
+## Description du Projet
 
 NutriAI est un système de recommandation alimentaire intelligent basé sur le **Machine Learning** qui s'adapte entièrement au profil utilisateur (âge, poids, taille, genre, niveau d'activité, objectif nutritionnel).
 
-### 🎯 Objectifs
+### Objectifs
 
 - Recommander des aliments personnalisés selon le profil nutritionnel
 - Générer des plans de repas équilibrés automatiquement
@@ -13,7 +13,7 @@ NutriAI est un système de recommandation alimentaire intelligent basé sur le *
 
 ---
 
-## 🤖 Modèles de Machine Learning Utilisés
+## Modèles de Machine Learning Utilisés
 
 ### 1. **Decision Tree Classifier** (Arbre de Décision)
 - **Usage** : Classification des aliments en 4 catégories
@@ -47,13 +47,13 @@ NutriAI est un système de recommandation alimentaire intelligent basé sur le *
 
 ---
 
-## 📊 Dataset
+## Dataset
 
-**Source** : `data/food_data.csv`
+**Source** : `data/final_food.csv`
 
 **Dimensions requises** :
-- ✅ Minimum 1000 lignes (aliments)
-- ✅ Minimum 10 colonnes (features nutritionnelles)
+- Minimum +- 19.0000 lignes (aliments)
+- Minimum 10 colonnes (features nutritionnelles)
 
 **Colonnes principales** :
 - `Food Category` : Nom de l'aliment
@@ -62,6 +62,10 @@ NutriAI est un système de recommandation alimentaire intelligent basé sur le *
 - `Fiber`, `Sugar`, `Water` : Micronutriments
 
 **Preprocessing** :
+- Combinaison de plusieurs dataset
+- Redimensionnement de ces derniers avec les bonnes colonnes
+- Ajout des colonnes manquantes sur base de calculs fiables
+- Suppression des doublons..
 - Suppression des valeurs manquantes
 - Retrait des outliers (IQR method)
 - Feature engineering (ratios, indices)
@@ -69,7 +73,7 @@ NutriAI est un système de recommandation alimentaire intelligent basé sur le *
 
 ---
 
-## 🛠️ Installation
+## Installation
 
 ### Prérequis
 
@@ -106,11 +110,11 @@ python main.py
 ```
 
 **Ce script va** :
-1. ✅ Nettoyer le dataset
-2. ✅ Entraîner les modèles pour 4 profils types
-3. ✅ Effectuer le fine-tuning des hyperparamètres
-4. ✅ Comparer les 4 algorithmes de ML
-5. ✅ Générer les visualisations et rapports
+1. Nettoyer le dataset
+2. Entraîner les modèles pour 4 profils types
+3. Effectuer le fine-tuning des hyperparamètres
+4. Comparer les 4 algorithmes de ML
+5. Générer les visualisations et rapports
 
 **Durée** : 5-10 minutes
 
@@ -120,8 +124,11 @@ python main.py
 - `models/decision_tree_personalized.pkl`
 - `models/best_*.pkl` (meilleurs modèles)
 - `models/model_comparison.csv`
-- `models/confusion_matrices.png`
-- `models/performance_comparison.png`
+- `models/confusion_decision_tree.png`
+- `models/confusion_random_forest.png`
+- `models/confusion_knn.png`
+- `models/confusion_gradient_boosting.png`
+- `models/f1_comparison.png`
 - `models/evaluation_report.txt`
 
 ### 2. Lancement de l'Application
@@ -134,29 +141,29 @@ streamlit run app.py
 
 ---
 
-## 📱 Fonctionnalités de l'Application
+## Fonctionnalités de l'Application
 
-### 🎯 Onglet 1 : Recommandations Personnalisées
+### Onglet 1 : Recommandations Personnalisées
 - Filtrage par rôle alimentaire (Privilégier/Modération/Neutre/Éviter)
 - Score de pertinence personnalisé
 - Justification des recommandations
 
-### 🍽️ Onglet 2 : Plan de Repas
+### Onglet 2 : Plan de Repas
 - Génération automatique d'un plan quotidien
 - Équilibrage des macronutriments
 - Graphique comparatif cible vs réel
 
-### 🔍 Onglet 3 : Analyse d'Aliment
+### Onglet 3 : Analyse d'Aliment
 - Recherche d'aliments
 - Analyse nutritionnelle détaillée
 - Recommandations similaires
 
-### 🌳 Onglet 4 : Arbre Explicatif
+### Onglet 4 : Arbre Explicatif
 - Visualisation de l'arbre de décision
 - Règles de classification
 - Importance des features
 
-### 📊 Onglet 5 : Performances & Comparaison
+### Onglet 5 : Performances & Comparaison
 - Tableau comparatif des 4 modèles
 - Matrices de confusion
 - Graphiques de performance
@@ -164,7 +171,7 @@ streamlit run app.py
 
 ---
 
-## 🔬 Métriques d'Évaluation
+## Métriques d'Évaluation
 
 ### Métriques Calculées
 
@@ -183,25 +190,36 @@ streamlit run app.py
 
 ---
 
-## 📂 Structure du Projet
+## Structure du Projet
 
 ```
 nutriai/
 │
 ├── data/
-│   ├── food_data.csv              # Dataset brut
-│   └── processed_nutrition.csv    # Dataset nettoyé
+│   ├── final_food.csv             # Dataset brut
+│   ├── processed_nutrition.csv    # Dataset nettoyé
+│   └── processed_nutrition_noisy.csv  # Dataset avec bruit (optionnel)
 │
 ├── models/
 │   ├── knn_personalized.pkl
 │   ├── decision_tree_personalized.pkl
-│   ├── best_*.pkl
+│   ├── *_best.pkl                # Meilleurs modèles après fine-tuning
 │   ├── model_comparison.csv
-│   ├── confusion_matrices.png
-│   ├── performance_comparison.png
+│   ├── confusion_decision_tree.png
+│   ├── confusion_random_forest.png
+│   ├── confusion_knn.png
+│   ├── confusion_gradient_boosting.png
+│   ├── f1_comparison.png
 │   └── evaluation_report.txt
 │
-├── data_preprocessing.py          # Nettoyage et feature engineering
+├── preprocessing/
+│   ├── data_preprocessing.py      # Nettoyage et feature engineering
+│   ├── 5_to_1_dataset.py          # Combine 5 datasets en un seul
+│   ├── create_dataset.py          # Créé un dataset sur base de 3 autres
+│   ├── data_augmentation.py       # Augmentation de données si dataset trop faible
+│   ├── add_noise.py               # Ajout de bruit contrôlé
+│   └── detect_similaire_in_dataset.py # Détecte les "Food Category" similaires et supprime les doublons
+│
 ├── models.py                      # Modèles ML personnalisés
 ├── model_evaluation.py            # Évaluation et comparaison
 ├── meal_planner.py                # Générateur de plans de repas
@@ -214,7 +232,7 @@ nutriai/
 
 ---
 
-## 🧪 Exemple de Résultats Attendus
+## Exemple de Résultats Attendus
 
 ### Comparaison des Modèles
 
@@ -225,27 +243,27 @@ nutriai/
 | KNN                 | 0.8312   | 0.8278   | 3.21            |
 | Gradient Boosting   | 0.8898   | 0.8865   | 78.92           |
 
-🏆 **Meilleur modèle** : Gradient Boosting (F1: 0.8865)
+**Meilleur modèle** : Gradient Boosting (F1: 0.8865)
 
 ---
 
-## 🎓 Conformité Académique
+## Conformité Académique
 
-### ✅ Critères Respectés
+### Critères Respectés
 
 | Critère | Requis | Implémenté |
-|---------|--------|------------|
+|---------|--------|----------|
 | Dataset | ≥1000 lignes, ≥10 colonnes | ✅ |
-| Algorithmes ML | Plusieurs algorithmes | ✅ 6 modèles |
-| Justification | Expliquer les choix | ✅ Documentation |
-| Fine-tuning | Optimisation hyperparamètres | ✅ GridSearchCV |
-| Métriques | Mesures de performance | ✅ 6 métriques |
-| Comparaison | Comparer les modèles | ✅ 4 algorithmes |
-| Validation | Cross-validation | ✅ 5-fold CV |
+| Algorithmes ML | Plusieurs algorithmes |6 modèles |
+| Justification | Expliquer les choix | Documentation |
+| Fine-tuning | Optimisation hyperparamètres | GridSearchCV |
+| Métriques | Mesures de performance | 6 métriques |
+| Comparaison | Comparer les modèles | 4 algorithmes |
+| Validation | Cross-validation | 5-fold CV |
 
 ---
 
-## 💡 Justification des Algorithmes
+## Justification des Algorithmes
 
 ### Decision Tree
 **Choix** : Interprétabilité maximale  
@@ -273,19 +291,7 @@ nutriai/
 
 ---
 
-## 🔮 Améliorations Futures
-
-- [ ] Deep Learning (CNN pour images d'aliments)
-- [ ] Système de recommandation collaboratif
-- [ ] Gestion des allergies et préférences
-- [ ] API REST pour intégration mobile
-- [ ] Base de données PostgreSQL
-- [ ] Authentification utilisateur
-- [ ] Historique des plans de repas
-
----
-
-## 👥 Auteurs
+## Auteurs
 
 **Projet académique** - Master 2 Sciences de l'Ingénieur / Architecture des Systèmes Informatiques
 
@@ -293,22 +299,19 @@ nutriai/
 
 ---
 
-## 📄 Licence
+## Résultats
+
+Les performances très élevées s’expliquent par le fait que les classes nutritionnelles sont générées à partir de critères déjà présents dans les variables d’entrée. L’évaluation mesure donc principalement la capacité des modèles à apprendre et reproduire une logique nutritionnelle interne cohérente, et non une prédiction sur des labels indépendants. Cela confirme la stabilité et la robustesse du système de recommandation.
+
+---
+
+## Licence
 
 Ce projet est réalisé dans un cadre académique.
 
 ---
 
-## 📞 Support
-
-Pour toute question concernant le projet :
-- Consulter la documentation dans `/docs`
-- Voir les exemples dans `/examples`
-- Lire le rapport d'évaluation : `models/evaluation_report.txt`
-
----
-
-## 🎉 Démo
+## Démo
 
 ```bash
 # Installation rapide
@@ -323,4 +326,4 @@ python main.py
 streamlit run app.py
 ```
 
-**Enjoy! 🥗**
+**Enjoy!**

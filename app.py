@@ -1,4 +1,3 @@
-# app.py - VERSION 100% PERSONNALISÉE AVEC ÉVALUATION
 import streamlit as st
 import pandas as pd
 import joblib
@@ -6,11 +5,9 @@ import os
 import matplotlib.pyplot as plt
 from meal_planner import MealPlanner
 from models import NutriAI
-from PIL import Image
 
-# Configuration
 st.set_page_config(page_title="NutriAI Personnalisé", layout="wide")
-st.title("🥗 NutriAI – Recommandations 100% Personnalisées")
+st.title("NutriAI – Recommandations 100% Personnalisées")
 
 
 # Chargement du système
@@ -22,9 +19,9 @@ def load_ai_system():
 
 ai = load_ai_system()
 
-# === SIDEBAR : Profil utilisateur ===
+# Profil utilisateur
 with st.sidebar:
-    st.header("👤 Votre Profil")
+    st.header("Votre Profil")
 
     col1, col2 = st.columns(2)
     with col1:
@@ -38,14 +35,14 @@ with st.sidebar:
             "Sédentaire", "Léger", "Modéré", "Intense", "Athlète"
         ])
         objective = st.selectbox("Objectif", [
-            ("perte", "🔥 Perte de poids"),
-            ("maintien", "⚖️ Maintien"),
-            ("gain", "💪 Prise de masse")
+            ("perte", "Perte de poids"),
+            ("maintien", "Maintien"),
+            ("gain", "Prise de masse")
         ], format_func=lambda x: x[1])
 
     st.divider()
 
-    if st.button("🎯 Calculer mes besoins personnalisés", type="primary"):
+    if st.button("Calculer mes besoins personnalisés", type="primary"):
         with st.spinner("Calcul en cours..."):
             # Configuration du profil utilisateur
             profile = ai.set_user_profile(
@@ -57,19 +54,19 @@ with st.sidebar:
                 objective=objective[0]
             )
 
-            # Classification personnalisée
+            # Classification
             ai.classify_food_role_personalized()
 
-            # Entraînement KNN personnalisé
+            # Entraînement KNN
             ai.train_knn_personalized()
 
-            # Entraînement arbre personnalisé
+            # Entraînement arbre
             ai.train_decision_tree_personalized()
 
             st.session_state.profile = profile
             st.session_state.ai_ready = True
 
-        st.success("✅ Profil configuré !")
+        st.success("Profil configuré !")
 
         # Affichage des besoins
         st.metric("TDEE", f"{int(profile['tdee'])} kcal")
@@ -82,19 +79,18 @@ with st.sidebar:
 
 # Vérification profil configuré
 if 'ai_ready' not in st.session_state:
-    st.info("👈 Configurez votre profil dans la barre latérale pour commencer")
+    st.info("Configurez votre profil dans la barre latérale pour commencer")
     st.stop()
 
-# === ONGLETS ===
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "🎯 Recommandations",
-    "🍽️ Plan de Repas",
-    "🔍 Analyse Aliment",
-    "🌳 Arbre Explicatif",
-    "📊 Performances & Comparaison"
+    "Recommandations",
+    "Plan de Repas",
+    "Analyse Aliment",
+    "Arbre Explicatif",
+    "Performances & Comparaison"
 ])
 
-# === ONGLET 1 : Recommandations ===
+# Recommandations
 with tab1:
     st.header("Aliments Recommandés pour VOUS")
 
@@ -151,13 +147,13 @@ with tab1:
                 if reasons:
                     st.info("Pourquoi cet aliment ? " + " | ".join(reasons))
 
-# === ONGLET 2 : Plan de repas ===
+# Plan de repas
 with tab2:
     st.header("Plan Nutritionnel Journalier Personnalisé")
 
     profile = st.session_state.profile
 
-    if st.button("📅 Générer mon plan complet", type="primary"):
+    if st.button("Générer mon plan complet", type="primary"):
         planner = MealPlanner(ai.df)
 
         target_macros = {
@@ -170,7 +166,7 @@ with tab2:
         with st.spinner("Génération du plan optimal..."):
             plan, totals = planner.generate_daily_plan_personalized(target_macros)
 
-        st.success("✅ Plan généré avec succès !")
+        st.success("Plan généré avec succès !")
 
         # Affichage par repas
         for meal, foods in plan.items():
@@ -197,7 +193,7 @@ with tab2:
 
         # Comparaison cible vs réel
         st.divider()
-        st.subheader("📊 Bilan Nutritionnel")
+        st.subheader("Bilan Nutritionnel")
 
         col1, col2 = st.columns(2)
 
@@ -248,9 +244,9 @@ with tab2:
 
         st.pyplot(fig)
 
-# === ONGLET 3 : Analyse aliment ===
+# Analyse aliment
 with tab3:
-    st.header("🔍 Analyse Détaillée d'un Aliment")
+    st.header("Analyse Détaillée d'un Aliment")
 
     food_name = st.text_input("Rechercher un aliment", placeholder="Ex: poulet, riz, banane...")
 
@@ -290,7 +286,7 @@ with tab3:
             col3.metric("Score perso", f"{food['user_score']:.2f}")
 
             # Analyse de pertinence pour VOUS
-            st.subheader("📈 Pertinence pour votre profil")
+            st.subheader("Pertinence pour votre profil")
 
             profile = st.session_state.profile
 
@@ -321,7 +317,7 @@ with tab3:
                 )
 
             # Recommandations similaires
-            st.subheader("🔄 Aliments Similaires Recommandés")
+            st.subheader("Aliments Similaires Recommandés")
 
             similar = ai.recommend_similar_personalized(food['Food Category'])
 
@@ -341,19 +337,18 @@ with tab3:
                         f"{sim['calories']:.0f} kcal, {sim['protein']:.0f}g protéines"
                     )
 
-# === ONGLET 4 : Arbre explicatif ===
+# Arbre explicatif
 with tab4:
-    st.header("🌳 Arbre de Décision Personnalisé")
+    st.header("Arbre de Décision Personnalisé")
 
     st.info(
         "Cet arbre est **unique à votre profil**. "
-        "Les critères incluent DIRECTEMENT : âge, poids, IMC, genre, activité, objectif, et vos besoins nutritionnels calculés."
     )
 
     profile = st.session_state.profile
 
-    # Afficher TOUS les paramètres du profil utilisés
-    st.subheader("📋 Paramètres de Votre Profil Utilisés dans l'Arbre")
+    # Afficher tous les paramètres du profil utilisés
+    st.subheader("Paramètres de Votre Profil Utilisés dans l'Arbre")
 
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Âge", f"{profile['age']} ans")
@@ -386,7 +381,7 @@ with tab4:
                 tree_classes = ['Privilégier', 'Modération', 'Neutre', 'Éviter']
 
             # Règles textuelles
-            st.subheader("📋 Règles de Décision")
+            st.subheader("Règles de Décision")
 
             from sklearn.tree import export_text
 
@@ -397,7 +392,7 @@ with tab4:
             st.info(f"Classes présentes dans ce modèle : {', '.join(tree_classes)}")
 
             # Visualisation graphique
-            st.subheader("📊 Visualisation de l'Arbre")
+            st.subheader("Visualisation de l'Arbre")
 
             from sklearn.tree import plot_tree
 
@@ -416,7 +411,7 @@ with tab4:
             st.pyplot(fig)
 
             # Importance des features
-            st.subheader("⭐ Importance des Critères")
+            st.subheader("Importance des Critères")
 
             importance_df = pd.DataFrame({
                 'Critère': features,
@@ -436,23 +431,17 @@ with tab4:
     else:
         st.warning("L'arbre n'a pas encore été entraîné. Configurez votre profil d'abord.")
 
-# === ONGLET 5 : Évaluation et Comparaison ===
+# Évaluation et Comparaison
 with tab5:
-    st.header("📊 Performances et Comparaison des Modèles")
-
-    st.markdown("""
-    Cette section présente une **évaluation scientifique rigoureuse** des différents 
-    modèles de Machine Learning utilisés dans NutriAI. Tous les modèles ont été 
-    optimisés via **GridSearchCV** et validés par **validation croisée**.
-    """)
+    st.header("Performances et Comparaison des Modèles")
 
     # Vérifier si l'évaluation a déjà été effectuée
     if not os.path.exists("models/model_comparison.csv"):
-        st.warning("⚠️ Les modèles n'ont pas encore été évalués.")
+        st.warning("Les modèles n'ont pas encore été évalués.")
         st.info(
-            "💡 L'évaluation prendra 5-10 minutes et testera 4 algorithmes différents avec optimisation des hyperparamètres.")
+            "L'évaluation prendra 5-10 minutes et testera 4 algorithmes différents avec optimisation des hyperparamètres.")
 
-        if st.button("🚀 Lancer l'Évaluation Complète", type="primary"):
+        if st.button("Lancer l'Évaluation Complète", type="primary"):
             with st.spinner("Évaluation en cours... Cela peut prendre plusieurs minutes."):
                 from model_evaluation import run_full_evaluation
 
@@ -465,10 +454,10 @@ with tab5:
                 st.session_state.evaluation_done = True
                 st.rerun()
     else:
-        st.success("✅ Évaluation disponible")
+        st.success("Évaluation disponible")
 
-        # === 1. TABLEAU COMPARATIF ===
-        st.subheader("📋 Tableau Comparatif des Modèles")
+        #TABLEAU COMPARATIF
+        st.subheader("Tableau Comparatif des Modèles")
 
         comparison_df = pd.read_csv("models/model_comparison.csv")
 
@@ -492,54 +481,56 @@ with tab5:
         best_model = comparison_df.loc[best_idx, 'Modèle']
         best_f1 = comparison_df.loc[best_idx, 'F1-Score']
 
-        st.success(f"🏆 **Meilleur modèle :** {best_model} (F1-Score: {best_f1:.4f})")
+        st.success(f"**Meilleur modèle :** {best_model} (F1-Score: {best_f1:.4f})")
 
         st.divider()
 
-        # === 2. GRAPHIQUES DE PERFORMANCE ===
-        st.subheader("📈 Visualisations des Performances")
+        # GRAPHIQUES DE PERFORMANCE
+        st.subheader("Visualisations des Performances")
 
         col1, col2 = st.columns(2)
 
         with col1:
-            if os.path.exists("models/performance_comparison.png"):
-                st.image("models/performance_comparison.png", caption="Comparaison des Métriques")
-            else:
-                st.warning("Graphique non disponible")
-
-        with col2:
-            if os.path.exists("models/training_time_comparison.png"):
-                st.image("models/training_time_comparison.png", caption="Temps d'Entraînement")
+            if os.path.exists("models/f1_comparison.png"):
+                st.image("models/f1_comparison.png", caption="Comparaison des F1-Scores")
             else:
                 st.warning("Graphique non disponible")
 
         st.divider()
 
-        # === 3. MATRICES DE CONFUSION ===
-        st.subheader("🎯 Matrices de Confusion")
+        # MATRICES DE CONFUSION
+        st.subheader("Matrices de Confusion")
 
-        if os.path.exists("models/confusion_matrices.png"):
-            st.image("models/confusion_matrices.png", use_column_width=True)
-            st.caption(
-                "Matrices de confusion pour chaque modèle - montre les prédictions correctes (diagonale) et erreurs")
+        confusion_files = [
+            "models/confusion_decision_tree.png",
+            "models/confusion_random_forest.png",
+            "models/confusion_knn.png",
+            "models/confusion_gradient_boosting.png"
+        ]
+
+        available = [f for f in confusion_files if os.path.exists(f)]
+
+        if available:
+            for f in available:
+                st.image(f, caption=os.path.basename(f))
         else:
             st.warning("Matrices de confusion non disponibles")
 
         st.divider()
 
-        # === 4. RAPPORT DÉTAILLÉ ===
-        st.subheader("📄 Rapport Détaillé")
+        # RAPPORT DÉTAILLÉ
+        st.subheader("Rapport Détaillé")
 
         if os.path.exists("models/evaluation_report.txt"):
             with open("models/evaluation_report.txt", 'r', encoding='utf-8') as f:
                 report_content = f.read()
 
-            with st.expander("📖 Voir le rapport complet", expanded=False):
+            with st.expander("Voir le rapport complet", expanded=False):
                 st.text(report_content)
 
             # Bouton téléchargement
             st.download_button(
-                label="📥 Télécharger le rapport",
+                label="Télécharger le rapport",
                 data=report_content,
                 file_name="nutriai_evaluation_report.txt",
                 mime="text/plain"
@@ -549,19 +540,19 @@ with tab5:
 
         st.divider()
 
-        # === 5. ANALYSE DES RÉSULTATS ===
-        st.subheader("🔍 Analyse des Résultats")
+        # ANALYSE DES RÉSULTATS
+        st.subheader("Analyse des Résultats")
 
         col1, col2 = st.columns(2)
 
         with col1:
             st.markdown("### Points Forts")
             st.markdown(f"""
-            - ✅ **{len(comparison_df)} modèles** testés et comparés
-            - ✅ Optimisation automatique des hyperparamètres
-            - ✅ Validation croisée 5-fold
-            - ✅ Métriques multiples (Accuracy, F1, Precision, Recall)
-            - ✅ Modèles adaptés au profil utilisateur
+            - **{len(comparison_df)} modèles** testés et comparés
+            - Optimisation automatique des hyperparamètres
+            - Validation croisée 5-fold
+            - Métriques multiples (Accuracy, F1, Precision, Recall)
+            - Modèles adaptés au profil utilisateur
             """)
 
         with col2:
@@ -574,32 +565,33 @@ with tab5:
             slowest_model = comparison_df.loc[comparison_df['Temps Train (s)'].idxmax(), 'Modèle']
 
             st.markdown(f"""
-            - 📊 Accuracy moyenne: **{avg_accuracy:.3f}**
-            - 📊 F1-Score moyen: **{avg_f1:.3f}**
-            - ⚡ Plus rapide: **{fastest_model}**
-            - 🐢 Plus lent: **{slowest_model}**
-            - 🎯 Meilleur: **{best_model}**
+            - Accuracy moyenne: **{avg_accuracy:.3f}**
+            - F1-Score moyen: **{avg_f1:.3f}**
+            - Plus rapide: **{fastest_model}**
+            - Plus lent: **{slowest_model}**
+            - Meilleur: **{best_model}**
             """)
 
         st.divider()
 
-        # === 6. RE-ÉVALUATION ===
-        st.subheader("🔄 Re-évaluation")
+        # RE-ÉVALUATION
+        st.subheader("Re-évaluation")
 
         col1, col2 = st.columns([3, 1])
 
         with col1:
-            st.info("💡 Vous pouvez relancer l'évaluation si vous avez modifié votre profil ou les données.")
+            st.info("Vous pouvez relancer l'évaluation si vous avez modifié votre profil ou les données.")
 
         with col2:
-            if st.button("🔄 Re-évaluer", type="secondary"):
-                # Supprimer anciens fichiers
+            if st.button("Re-évaluer", type="secondary"):
                 files_to_remove = [
                     "models/model_comparison.csv",
-                    "models/confusion_matrices.png",
-                    "models/performance_comparison.png",
-                    "models/training_time_comparison.png",
-                    "models/evaluation_report.txt"
+                    "models/f1_comparison.png",
+                    "models/evaluation_report.txt",
+                    "models/confusion_decision_tree.png",
+                    "models/confusion_random_forest.png",
+                    "models/confusion_knn.png",
+                    "models/confusion_gradient_boosting.png"
                 ]
 
                 for f in files_to_remove:
@@ -607,10 +599,3 @@ with tab5:
                         os.remove(f)
 
                 st.rerun()
-
-# Footer
-st.divider()
-st.caption(
-    "💡 NutriAI Personnalisé - Tous les modèles s'adaptent à VOTRE profil unique. "
-    "Changez vos paramètres dans la barre latérale pour voir les recommandations évoluer."
-)

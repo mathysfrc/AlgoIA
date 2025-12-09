@@ -103,7 +103,7 @@ def augment_dataset(df, target_size=1200):
 
 def verify_augmented_dataset(df):
     """Vérifie la qualité du dataset augmenté"""
-    print("\n🔍 Vérification du dataset augmenté:")
+    print("\nVérification du dataset augmenté:")
 
     # 1. Dimensions
     print(f"   ✓ Lignes: {len(df)} (≥1000: {'✅' if len(df) >= 1000 else '❌'})")

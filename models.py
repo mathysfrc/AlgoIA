@@ -1,12 +1,8 @@
-# models.py - VERSION 100% BASÉE SUR PROFIL UTILISATEUR
 import os
 import pandas as pd
 import numpy as np
 import joblib
-from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 from sklearn.neighbors import NearestNeighbors
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_absolute_error
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.tree import DecisionTreeClassifier, export_text
 
@@ -58,7 +54,6 @@ class NutriAI:
         self.scaler = StandardScaler()
         self.label_encoder = LabelEncoder()
 
-        # Définir ordre des classes EXPLICITEMENT
         self.class_order = ['Privilégier', 'Modération', 'Neutre', 'Éviter']
 
         self.rf_reg = None
@@ -196,7 +191,7 @@ class NutriAI:
         filtered = df[mask].copy()
         removed = len(df) - len(filtered)
         if removed > 0:
-            print(f"🚫 {removed} aliments malsains exclus")
+            print(f"{removed} aliments malsains exclus")
         return filtered
 
     def _add_user_profile_features(self, df):
@@ -451,7 +446,7 @@ class NutriAI:
 
         # VÉRIFICATION: Au moins 2 classes nécessaires pour un arbre
         if len(present_classes) < 2:
-            print(f"⚠️ ATTENTION: Seulement {len(present_classes)} classe(s) présente(s): {present_classes}")
+            print(f"ATTENTION: Seulement {len(present_classes)} classe(s) présente(s): {present_classes}")
             print(f"   Les règles de classification sont trop strictes pour ce profil.")
             print(f"   L'arbre ne sera pas entraîné (nécessite au moins 2 classes).")
 

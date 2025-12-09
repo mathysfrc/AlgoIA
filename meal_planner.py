@@ -1,5 +1,3 @@
-# meal_planner.py - VERSION PERSONNALISÉE
-import pandas as pd
 import numpy as np
 
 
