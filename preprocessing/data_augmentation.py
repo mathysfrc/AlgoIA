@@ -1,4 +1,3 @@
-# data_augmentation.py - Augmenter le dataset pour atteindre 1000+ lignes
 import pandas as pd
 import numpy as np
 
@@ -12,7 +11,7 @@ def augment_dataset(df, target_size=1200):
     2. Variations de portions (petite, moyenne, grande)
     3. Variations de préparation (nature, assaisonné, mariné)
     """
-    print(f"\n📊 Augmentation du dataset de {len(df)} → {target_size} lignes")
+    print(f"\nAugmentation du dataset de {len(df)} → {target_size} lignes")
 
     augmented_rows = []
     current_size = len(df)
@@ -94,7 +93,7 @@ def augment_dataset(df, target_size=1200):
     # Créer DataFrame augmenté
     df_augmented = pd.DataFrame(augmented_rows[:target_size])
 
-    print(f"✅ Dataset augmenté: {len(df_augmented)} lignes")
+    print(f" Dataset augmenté: {len(df_augmented)} lignes")
     print(f"   - Lignes originales: {current_size}")
     print(f"   - Lignes générées: {len(df_augmented) - current_size}")
 
@@ -106,19 +105,19 @@ def verify_augmented_dataset(df):
     print("\nVérification du dataset augmenté:")
 
     # 1. Dimensions
-    print(f"   ✓ Lignes: {len(df)} (≥1000: {'✅' if len(df) >= 1000 else '❌'})")
-    print(f"   ✓ Colonnes: {len(df.columns)} (≥10: {'✅' if len(df.columns) >= 10 else '❌'})")
+    print(f"   ✓ Lignes: {len(df)} (≥1000: {'' if len(df) >= 1000 else ''})")
+    print(f"   ✓ Colonnes: {len(df.columns)} (≥10: {'' if len(df.columns) >= 10 else ''})")
 
     # 2. Valeurs manquantes
     missing = df.isnull().sum().sum()
-    print(f"   ✓ Valeurs manquantes: {missing} {'✅' if missing == 0 else '⚠️'}")
+    print(f"   ✓ Valeurs manquantes: {missing} {'' if missing == 0 else ''}")
 
     # 3. Duplicatas exacts
     duplicates = df.duplicated().sum()
-    print(f"   ✓ Duplicatas exacts: {duplicates} {'✅' if duplicates < 10 else '⚠️'}")
+    print(f"   ✓ Duplicatas exacts: {duplicates} {'' if duplicates < 10 else ''}")
 
     # 4. Distribution des nutriments
-    print(f"\n   📊 Statistiques nutritionnelles:")
+    print(f"\n    Statistiques nutritionnelles:")
     print(f"      Calories: {df['Calories'].min():.0f} - {df['Calories'].max():.0f} (moy: {df['Calories'].mean():.0f})")
     print(f"      Protéines: {df['Protein'].min():.1f} - {df['Protein'].max():.1f}g (moy: {df['Protein'].mean():.1f})")
     print(f"      Glucides: {df['Carbs'].min():.1f} - {df['Carbs'].max():.1f}g (moy: {df['Carbs'].mean():.1f})")
@@ -136,13 +135,13 @@ if __name__ == "__main__":
         df = pd.read_csv("data/processed_nutrition.csv")
         print(f"\n✓ Dataset chargé: {len(df)} lignes")
     except FileNotFoundError:
-        print("❌ Fichier 'data/processed_nutrition.csv' non trouvé")
+        print(" Fichier 'data/processed_nutrition.csv' non trouvé")
         print("   Exécutez d'abord: python main.py")
         exit(1)
 
     # Vérifier si augmentation nécessaire
     if len(df) >= 1000:
-        print(f"\n✅ Dataset déjà conforme ({len(df)} lignes)")
+        print(f"\n Dataset déjà conforme ({len(df)} lignes)")
         exit(0)
 
     # Augmenter le dataset
@@ -154,10 +153,10 @@ if __name__ == "__main__":
     if is_valid:
         # Sauvegarder
         df_augmented.to_csv("data/processed_nutrition.csv", index=False)
-        print(f"\n✅ Dataset augmenté sauvegardé: data/processed_nutrition.csv")
+        print(f"\n Dataset augmenté sauvegardé: data/processed_nutrition.csv")
         print(f"   → Vous pouvez maintenant relancer: python main.py")
     else:
-        print(f"\n❌ Le dataset augmenté ne respecte pas les critères")
+        print(f"\n Le dataset augmenté ne respecte pas les critères")
         print(f"   → Vérifiez les erreurs ci-dessus")
 
     print("\n" + "=" * 80)
