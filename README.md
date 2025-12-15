@@ -73,6 +73,43 @@ NutriAI est un système de recommandation alimentaire intelligent basé sur le *
 
 ---
 
+# Pourquoi ne pas utiliser RandomForest et Boosting pour ce projet ?
+
+## Ce qu’ils apporteraient
+
+### 1. Gradient Boosting — meilleure précision
+- Légèrement plus précis  
+- Meilleur équilibre sur les classes rares (ex. : **"Éviter"**)  
+- Inférence rapide  
+- **Inconvénient :** entraînement plus long  
+
+### 2. Random Forest — robustesse
+- Moins sensible au surapprentissage qu’un Decision Tree seul  
+- Meilleure généralisation sur de nouveaux profils  
+- Gère mieux les outliers  
+- Inférence rapide  
+
+## Avantages pratiques
+- Prédictions plus fiables sur les **cas limites**  
+  - Exemple : aliments à la frontière entre **"Modération"** et **"Éviter"**
+
+## Meilleure gestion des classes déséquilibrées
+- Gradient Boosting gère mieux les **classes rares**  
+  - Exemple : *"Éviter" : 5 exemples*  
+- Robustesse face aux variations  
+  - Random Forest est moins sensible aux changements de données  
+- Option de vote d’ensemble  
+  - Combiner plusieurs modèles pour plus de fiabilité  
+
+## Inconvénients
+- **Moins explicable**
+  - Random Forest = 80–150 arbres (difficile à visualiser)  
+  - Gradient Boosting = séquence complexe  
+- **Entraînement plus long**
+  - Gradient Boosting ≈ **51s** vs **3.6s** pour Decision Tree  
+- **Complexité**
+  - Plus difficile à déboguer
+
 ## Installation
 
 ### Prérequis

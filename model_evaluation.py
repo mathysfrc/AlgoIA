@@ -28,18 +28,14 @@ class ModelEvaluator:
         self.results = {}
         self.best_models = {}
 
-    # -------------------------------------------------------------------
-    # OUTILS INTERNES
-    # -------------------------------------------------------------------
+  # Outils interne
 
     def _get_safe_cv(self, y, max_cv=5):
         """Détermine un nombre de folds valide selon la classe la plus rare"""
         min_class_size = min(Counter(y).values())
         return max(2, min(max_cv, min_class_size))
 
-    # -------------------------------------------------------------------
-    # PRÉPARATION DES DONNÉES
-    # -------------------------------------------------------------------
+   # Préparation des données
 
     def prepare_data(self):
         """Nettoyage, filtrage et normalisation"""
@@ -86,10 +82,9 @@ class ModelEvaluator:
 
         return X_train, X_test, y_train, y_test
 
-    # -------------------------------------------------------------------
-    # FINE-TUNING DES MODÈLES
-    # -------------------------------------------------------------------
+    # fine tunning des modèles
 
+    # cherche la meilleure configuration possible de l’arbre afin d’avoir de meilleures prédictions et moins d’overfitting
     def tune_decision_tree(self, X, y):
         print("\nTuning Decision Tree...")
 
@@ -103,10 +98,14 @@ class ModelEvaluator:
         model = DecisionTreeClassifier(random_state=42)
         cv_folds = self._get_safe_cv(y, max_cv=3)
 
+        # Pour chaque combinaison :
+        # entraînement sur cv-1 folds
+        # test sur le fold restant
+        # score F1 pondéré (équilibre entre classes)
         gs = GridSearchCV(
             model, param_grid,
             cv=cv_folds,
-            scoring='f1_weighted',
+            scoring='f1_weighted', # Precision + Recall
             n_jobs=-1
         )
 
@@ -119,6 +118,10 @@ class ModelEvaluator:
     def tune_random_forest(self, X, y):
         print("\nTuning Random Forest...")
 
+        # n_estimators : 80-150 arbres
+        # max_depth : 10-20 niveaux
+        # min_samples_split : 2-10
+        # min_samples_leaf : 1-2
         param_grid = {
             'n_estimators': [80, 150],
             'max_depth': [10, 20],
@@ -132,6 +135,7 @@ class ModelEvaluator:
         gs = GridSearchCV(
             model, param_grid,
             cv=cv_folds,
+            # Recall + Precision
             scoring='f1_weighted',
             n_jobs=-1
         )
@@ -170,6 +174,11 @@ class ModelEvaluator:
     def tune_gradient_boosting(self, X, y):
         print("\nTuning Gradient Boosting...")
 
+        # Premier arbre fait des prédictions
+        # Calcul des erreurs (résidus)
+        # Nouvel arbre entraîné pour prédire ces erreurs
+        # Répété 80-120 fois
+        # Prédiction finale = somme de toutes les prédictions
         param_grid = {
             'n_estimators': [80, 120],
             'learning_rate': [0.05, 0.1],
@@ -192,10 +201,7 @@ class ModelEvaluator:
 
         return gs.best_estimator_, gs.best_params_, elapsed
 
-    # -------------------------------------------------------------------
-    # ÉVALUATION
-    # -------------------------------------------------------------------
-
+    # évaluation
     def evaluate_model(self, model, X_test, y_test, name):
         start = time.time()
         y_pred = model.predict(X_test)
@@ -216,9 +222,7 @@ class ModelEvaluator:
             'confusion_matrix': confusion_matrix(y_test, y_pred)
         }
 
-    # -------------------------------------------------------------------
-    # COMPARAISON GLOBALE
-    # -------------------------------------------------------------------
+    # Comparaison
     def compare_models(self):
         print("\n=== Comparaison des modèles ===")
 
@@ -235,9 +239,7 @@ class ModelEvaluator:
             ("Gradient Boosting", self.tune_gradient_boosting)
         ]
 
-        # ------------------------------------------------------------------
-        # Entraînement + Évaluation
-        # ------------------------------------------------------------------
+        # Entrainement + évaluation
         for model_name, tuner in models:
             print(f"\n Évaluation : {model_name}")
 
@@ -250,9 +252,7 @@ class ModelEvaluator:
             self.results[model_name] = res
             self.best_models[model_name] = model
 
-            # ------------------------------------------------------------------
             # Matrice de confusion
-            # ------------------------------------------------------------------
             cm = res["confusion_matrix"]
             cm_path = f"models/confusion_{model_name.lower().replace(' ', '_')}.png"
 
@@ -265,9 +265,7 @@ class ModelEvaluator:
 
             res["confusion_path"] = cm_path
 
-        # ------------------------------------------------------------------
-        # Rapport texte global (UNE SEULE FOIS)
-        # ------------------------------------------------------------------
+        # Rapport texte global
         report_path = "models/evaluation_report.txt"
         with open(report_path, "w", encoding="utf-8") as f:
             for model_name, res in self.results.items():
@@ -275,9 +273,7 @@ class ModelEvaluator:
                 f.write(pd.DataFrame(res["classification_report"]).to_string())
                 f.write("\n\n")
 
-        # ------------------------------------------------------------------
         # Tableau comparatif
-        # ------------------------------------------------------------------
         df_results = pd.DataFrame([
             {
                 "Modèle": res["model_name"],
@@ -291,14 +287,12 @@ class ModelEvaluator:
             for res in self.results.values()
         ])
 
-        print("\n=== ✅ Résultats finaux ===")
+        print("\n=== Résultats finaux ===")
         print(df_results.to_string(index=False))
 
         df_results.to_csv("models/model_comparison.csv", index=False)
 
-        # ------------------------------------------------------------------
         # Graphique comparatif F1-score
-        # ------------------------------------------------------------------
         plt.figure(figsize=(8, 4))
         sns.barplot(x="Modèle", y="F1-Score", data=df_results)
         plt.title("Comparaison des F1-Scores")
@@ -308,10 +302,7 @@ class ModelEvaluator:
 
         return df_results
 
-    # -------------------------------------------------------------------
-    # SAUVEGARDE DES MODÈLES
-    # -------------------------------------------------------------------
-
+    # Sauvegarde des modèles
     def save_best_models(self):
         os.makedirs("models", exist_ok=True)
 
@@ -322,10 +313,7 @@ class ModelEvaluator:
         print("Meilleurs modèles sauvegardés")
 
 
-# -------------------------------------------------------------------
-# POINT D'ENTRÉE
-# -------------------------------------------------------------------
-
+# Point d'entrée
 def run_full_evaluation(df, user_profile):
     print("\n=== Démarrage Évaluation Accélérée ===")
 

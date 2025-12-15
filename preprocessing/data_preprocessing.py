@@ -20,6 +20,7 @@ def remove_outliers(df, columns, factor=1.5):
         df = df[(df[col] >= lower) & (df[col] <= upper)]
     return df
 
+#Discretisation
 def discretize_nutrients(df):
     df['calorie_level'] = pd.cut(df['Calories'], bins=[0, 100, 300, 1000], labels=['Faible', 'Moyen', 'Élevé'])
     df['protein_level'] = pd.cut(df['Protein'], bins=[0, 5, 15, 100], labels=['Faible', 'Moyen', 'Élevé'])
@@ -75,6 +76,7 @@ def enrich_with_profiles(df):
         {"profil": "athlete", "activity_factor": 1.9, "objective": "gain"},
     ]
 
+    # On modifie avec le profil courant de l'user
     augmented_rows = []
     for _, row in df.iterrows():
         for p in profiles:

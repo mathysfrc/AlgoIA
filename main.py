@@ -13,7 +13,7 @@ def train_for_profile(ai, weight, height, age, gender, activity, objective, prof
     print(f"ENTRAÎNEMENT POUR PROFIL: {profile_name}")
     print(f"{'=' * 60}")
 
-    # Configuration profil
+    # Configuration profil => models.py
     profile = ai.set_user_profile(
         weight=weight,
         height=height,
@@ -23,15 +23,15 @@ def train_for_profile(ai, weight, height, age, gender, activity, objective, prof
         objective=objective
     )
 
-    # Classification
+    # Classification => models.py
     print("\n1. Classification des rôles alimentaires...")
     ai.classify_food_role_personalized()
 
-    # KNN
+    # KNN => models.py
     print("\n2. Entraînement KNN personnalisé...")
     ai.train_knn_personalized()
 
-    # Arbre de décision
+    # Arbre de décision => models.py
     print("\n3. Entraînement de l'arbre de décision...")
     rules = ai.train_decision_tree_personalized()
 
@@ -57,13 +57,14 @@ if __name__ == "__main__":
     os.makedirs("models", exist_ok=True)
     os.makedirs("data", exist_ok=True)
 
-    # 1. Nettoyage du dataset
+    # 1. Nettoyage du dataset => models.py
     print("\nChargement et nettoyage du dataset...")
     if os.path.exists("data/processed_nutrition.csv"):
         print("Dataset déjà traité trouvé, utilisation sans écraser")
         df = pd.read_csv('data/processed_nutrition_noisy.csv')
     else:
         print("Aucun dataset traité, création…")
+        # On appel final food et on traite avec load and clean => résultat : processed_nutrition.csv
         df = load_and_clean("data/final_food.csv")
         df.to_csv("data/processed_nutrition.csv", index=False)
     print(f"✓ Dataset nettoyé: {len(df)} lignes, {len(df.columns)} colonnes")
@@ -80,6 +81,7 @@ if __name__ == "__main__":
 
     print("\nEntraînement pour TOUS les profils Homme / Femme...")
 
+    # Profils de référence
     genders = {
         "Homme": {
             "weight": 80,
@@ -109,6 +111,7 @@ if __name__ == "__main__":
 
                 print(f"\n🚀 Lancement profil: {profile_name}")
 
+                # Sur base des profils fournis
                 result = train_for_profile(
                     ai=ai,
                     weight=base["weight"],
@@ -150,9 +153,8 @@ if __name__ == "__main__":
     print("\nLancement de l'évaluation comparative...")
     print("   - Fine-tuning des hyperparamètres (GridSearchCV)")
     print("   - Validation croisée 5-fold")
-    print("   - Test de 4 algorithmes différents")
+    print("   - Test d'algorithmes différents")
     print("   - Génération des visualisations")
-    print("\nCela peut prendre 5-10 minutes...")
 
     try:
         evaluator, comparison_df = run_full_evaluation(ai.df, last_profile)
@@ -177,7 +179,6 @@ if __name__ == "__main__":
     print(f"\nProfil de test: {last_profile_name}")
 
     # Aliments privilégiés
-    privileged = ai.df[ai.df['role'] == 'Privilégier'].head(5)
     privileged = ai.df[ai.df['role'] == 'Privilégier'].head(5)
     print("\n Top 5 aliments à PRIVILÉGIER:")
     for idx, (_, food) in enumerate(privileged.iterrows(), 1):

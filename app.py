@@ -20,6 +20,7 @@ def load_ai_system():
 ai = load_ai_system()
 
 # Profil utilisateur
+# Affichage de valeurs par défaut modifiable
 with st.sidebar:
     st.header("Votre Profil")
 
@@ -42,6 +43,7 @@ with st.sidebar:
 
     st.divider()
 
+    # ai. -> on appel main pour effectuer les calculs
     if st.button("Calculer mes besoins personnalisés", type="primary"):
         with st.spinner("Calcul en cours..."):
             # Configuration du profil utilisateur
@@ -53,6 +55,8 @@ with st.sidebar:
                 activity=activity,
                 objective=objective[0]
             )
+
+            # Une fois le profil set, on lance tous les calculs pour configurer le profil
 
             # Classification
             ai.classify_food_role_personalized()
@@ -110,6 +114,7 @@ with tab1:
         horizontal=True
     )
 
+    # Calculer selon le user_score
     foods = ai.df[ai.df['role'] == role_filter].sort_values('user_score', ascending=False)
 
     if len(foods) == 0:
@@ -362,6 +367,7 @@ with tab4:
 
     st.divider()
 
+    # sert uniquement à donner un ordre de grandeur à l’utilisateur
     col1, col2, col3 = st.columns(3)
     col1.metric("Protéines/repas", f"{profile['target_protein'] / 6:.0f}g")
     col2.metric("Glucides/repas", f"{profile['target_carbs'] / 6:.0f}g")
@@ -385,17 +391,18 @@ with tab4:
 
             from sklearn.tree import export_text
 
+            # converti l'arbre en règles textuelles explicites
             rules = export_text(dt, feature_names=features, class_names=tree_classes, max_depth=5)
             st.code(rules, language="text")
 
             # Note sur les classes
             st.info(f"Classes présentes dans ce modèle : {', '.join(tree_classes)}")
 
-            # Visualisation graphique
             st.subheader("Visualisation de l'Arbre")
 
             from sklearn.tree import plot_tree
 
+            # Visualisation graphique complète de l'arbre => Haute interprétabilité
             fig, ax = plt.subplots(figsize=(20, 12))
             plot_tree(
                 dt,
@@ -413,6 +420,7 @@ with tab4:
             # Importance des features
             st.subheader("Importance des Critères")
 
+            # Mesure à quel point elle influence les décisions
             importance_df = pd.DataFrame({
                 'Critère': features,
                 'Importance': dt.feature_importances_
