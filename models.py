@@ -388,28 +388,47 @@ class NutriAI:
         print(f"✓ KNN entraîné avec {len(features)} features incluant profil complet")
 
     def recommend_similar_personalized(self, food_name):
-        """Recommandations basées sur profil ET similarité"""
+        """Recommandations basées UNIQUEMENT sur similarité nutritionnelle réelle (calories, protéines, glucides, etc.)"""
         # On récupère le profil et les scores et on exclu la malbouffe
         df = self._filter_unhealthy_foods(self.df.copy())
         df = self._add_user_profile_features(df)
         df = self._calculate_personalized_scores(df)
 
-        # Trouver l’aliment de référence par rapport a food category dans le dataset
+        # Trouver l'aliment de référence par rapport a food category dans le dataset
         row = df[df['Food Category'].str.contains(food_name, case=False, na=False)]
         if row.empty:
             return []
 
-        # Récupère le modèle KNN pour les features, supprime les NaN et normalise les données
-        features = joblib.load("models/knn_features.pkl")
-        X = df[features].fillna(0)
-        X_scaled = self.scaler.transform(X)
+        # Features pour similarité : Uniquement macronutriments principaux (calories, protéines, glucides, lipides)
+        # On exclut Water, density, satiety_index qui peuvent brouiller la similarité
+        similarity_features = ['Calories', 'Protein', 'Carbs', 'Fat']
 
-        # Trouve les aliments les plus proches de l’aliment choisi (6) fourni par l'user dans la barre de recherche
-        _, indices = self.knn.kneighbors([X_scaled[row.index[0]]])
+        # Créer un KNN local avec uniquement les valeurs nutritionnelles principales pour trouver des aliments similaires
+        X_similarity = df[similarity_features].fillna(0)
+        similarity_scaler = StandardScaler()
+        X_similarity_scaled = similarity_scaler.fit_transform(X_similarity)
+        
+        similarity_knn = NearestNeighbors(n_neighbors=6, metric='euclidean')
+        similarity_knn.fit(X_similarity_scaled)
+
+        # Trouve les aliments les plus proches basés sur similarité nutritionnelle réelle
+        _, indices = similarity_knn.kneighbors([X_similarity_scaled[row.index[0]]])
 
         recommendations = []
+        reference_food = df.iloc[row.index[0]]
+        
         for idx in indices[0][1:]:
             food = df.iloc[idx]
+            
+            # Filtrer les aliments trop différents (écart de plus de 50% sur les calories ou protéines principales)
+            # pour éviter les recommandations non pertinentes
+            cal_diff_ratio = abs(food['Calories'] - reference_food['Calories']) / max(reference_food['Calories'], 1)
+            protein_diff_ratio = abs(food['Protein'] - reference_food['Protein']) / max(reference_food['Protein'], 1)
+            
+            # Ne garder que les aliments avec une différence raisonnable (max 80% d'écart)
+            if cal_diff_ratio > 0.8 or protein_diff_ratio > 0.8:
+                continue
+            
             # Renvoie ces infos pour chaque voisin
             recommendations.append({
                 'name': food['Food Category'],
