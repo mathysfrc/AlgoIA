@@ -28,7 +28,7 @@ class NutriAI:
             'Sugar', 'Water', 'density_kcal_100g', 'satiety_index'
         ]
 
-        # PROFIL UTILISATEUR COMPLET => défini de manière générale
+        # PRofil utilisateur complet générique => défini de manière générale
         self.user_profile = {
             'weight': 70,
             'height': 175,
@@ -43,7 +43,7 @@ class NutriAI:
             'target_carbs': 0,
             'target_fat': 0,
             'target_calories': 0,
-            # ENCODAGES pour ML
+            # Encodages pour ML
             'gender_encoded': 1,  # 1=Homme, 0=Femme
             'activity_encoded': 2,  # 0-4
             'objective_encoded': 1,  # 0=perte, 1=maintien, 2=gain
@@ -51,6 +51,7 @@ class NutriAI:
         }
 
         self._initialize_columns()
+        # Pré-processing
         self.scaler = StandardScaler()
         self.label_encoder = LabelEncoder()
 
@@ -64,21 +65,21 @@ class NutriAI:
         os.makedirs("models", exist_ok=True)
 
     def _initialize_columns(self):
-        """Initialise colonnes nécessaires"""
+        # Si les colonnes existent pas, on donne une valeur
         if 'profil' not in self.df.columns:
             self.df['profil'] = 'modere'
         if 'objective' not in self.df.columns:
             self.df['objective'] = 'maintien'
 
+        # Défini des valeurs selon calculs
         self.df['prot_ratio'] = self.df['Protein'] * 4 / self.df['Calories']
         self.df['carb_ratio'] = self.df['Carbs'] * 4 / self.df['Calories']
         self.df['fat_ratio'] = self.df['Fat'] * 9 / self.df['Calories']
 
     # Calcul mathématique fitness du profil complet pour savoir les besoins
-
     def set_user_profile(self, weight, height, age, gender, activity, objective):
         """
-        Calcule TOUS les paramètres du profil utilisateur.
+        Calcule tous les paramètres du profil utilisateur.
         Crée des encodages numériques pour intégration dans les modèles ML.
         """
         # 1. Stocker paramètres de base
@@ -140,10 +141,11 @@ class NutriAI:
         }
         activity_encoded = activity_map.get(activity, 2)
 
+        # Encodage des objectifs
         objective_map = {"perte": 0, "maintien": 1, "gain": 2}
         objective_encoded = objective_map.get(objective, 1)
 
-        # Groupe d'âge
+        # Encodage des groupes d'ages
         if age < 25:
             age_group = 0  # Jeune
         elif age < 50:
@@ -151,7 +153,7 @@ class NutriAI:
         else:
             age_group = 2  # Senior
 
-        # 7. Mettre à jour profil complet
+        # 7. Mettre à jour profil complet avec les datas réelles du profil
         self.user_profile.update({
             'bmr': bmr,
             'tdee': tdee,
@@ -175,12 +177,12 @@ class NutriAI:
         print(f"  BMR: {int(bmr)} kcal | TDEE: {int(tdee)} kcal")
         print(f"  Cible: {int(target_cal)} kcal | P:{int(target_protein)}g G:{int(target_carbs)}g L:{int(target_fat)}g")
 
+        # On retourne user_profile qu'on utilise partout par la suite
         return self.user_profile
 
     # filtrage + scoring
-
     def _filter_unhealthy_foods(self, df):
-        """Exclut aliments malsains"""
+        # Exclut aliments malsains
         mask = df['Food Category'].str.lower().apply(
             lambda x: not any(bad in x for bad in self.UNHEALTHY_BLACKLIST)
         )
@@ -226,10 +228,10 @@ class NutriAI:
         # comparent chaque aliment aux besoins de l’utilisateur
         # sont normalisés entre 0 et 1
         # servent à :
-        # scorer
-        # classer
-        # expliquer
-        # recommander
+        # - scorer
+        # - classer
+        # - expliquer
+        #-  recommander
         df['protein_fit'] = 1 - abs(df['Protein'] - target['target_protein'] / 6 ) / (target['target_protein'] / 6 + 1)
         df['carbs_fit'] = 1 - abs(df['Carbs'] - target['target_carbs'] / 6) / (target['target_carbs'] / 6 + 1)
         df['fat_fit'] = 1 - abs(df['Fat'] - target['target_fat'] / 6) / (target['target_fat'] / 6 + 1)
@@ -263,12 +265,13 @@ class NutriAI:
                     0.20 * df['calorie_fit']
             )
 
+        # User_score adapté au profil retourné dans le dataset
         return df
 
    # Classification
-
     def classify_food_role_personalized(self):
-        """Classification avec seuils dynamiques"""
+        # Classification avec seuils dynamiques
+        # On récupère le profil et les scores et on exclu la malbouffe
         df = self._filter_unhealthy_foods(self.df.copy())
         df = self._add_user_profile_features(df)
         df = self._calculate_personalized_scores(df)
@@ -281,6 +284,7 @@ class NutriAI:
         fat_threshold = target['target_fat'] / 6
         cal_threshold = target['target_calories'] / 4
 
+        # Défini les règles pour chaque objectif
         if target['objective'] == 'perte':
             conditions = [
                 # Privilégier
@@ -301,25 +305,31 @@ class NutriAI:
 
         elif target['objective'] == 'gain':
             conditions = [
+                # Privilégier
                 (df['Calories'] >= cal_threshold * 1.2) &
                 (df['Protein'] >= protein_threshold * 0.7) &
                 (df['Carbs'] >= carbs_threshold * 0.8),
 
+                # Modération
                 (df['Calories'] < cal_threshold * 0.8),
 
+                # éviter
                 (df['Sugar'] > 20) & (df['Protein'] < protein_threshold * 0.5)
             ]
 
         else:  # maintien
             conditions = [
+                # Privilégier
                 (df['Protein'] >= protein_threshold * 0.7) &
                 (df['Protein'] <= protein_threshold * 1.3) &
                 (df['Calories'] >= cal_threshold * 0.8) &
                 (df['Calories'] <= cal_threshold * 1.2),
 
+                # Modération
                 (df['Fat'] > fat_threshold * 1.5) |
                 (df['Sugar'] > 12),
 
+                # éviter
                 (df['Calories'] > cal_threshold * 2) |
                 (df['Sugar'] > 20)
             ]
@@ -331,6 +341,7 @@ class NutriAI:
         self.df = df
 
         print(f"✓ Classification personnalisée :")
+        # Calcul le %  d'aliment ayant un des rôles
         for role in self.class_order:
             count = len(df[df['role'] == role])
             pct = count / len(df) * 100
@@ -338,18 +349,18 @@ class NutriAI:
 
         return df
 
-   # KNN
-
+   # KN
     def train_knn_personalized(self):
         """
         KNN qui utilise directement les paramètres du profil utilisateur.
-        Les aliments similaires sont ceux adaptés au même profil !
+        Les aliments similaires sont ceux adaptés au même profil
         """
+        # On récupère le profil et les scores et on exclu la malbouffe
         df = self._filter_unhealthy_foods(self.df.copy())
         df = self._add_user_profile_features(df)
         df = self._calculate_personalized_scores(df)
 
-        # Features complètes incluant tout le profil
+        # Features complètes incluant tout le profil, on se base sur toutes les features du profil
         features = self.base_features + [
             'user_score', 'protein_fit', 'carbs_fit', 'fat_fit',
             'user_weight', 'user_age', 'user_bmi',
@@ -358,9 +369,9 @@ class NutriAI:
         ]
 
         # Normalisation
-        # construis la matrice d’entrée du modèle
+        # construis la matrice d’entrée du modèle on enleves les NaN
         X = df[features].fillna(0)
-        # Normalise
+        # Normalise les données pour résultat + précis
         X_scaled = self.scaler.fit_transform(X)
 
         # Calcul des distances euclidiennes
@@ -378,20 +389,22 @@ class NutriAI:
 
     def recommend_similar_personalized(self, food_name):
         """Recommandations basées sur profil ET similarité"""
+        # On récupère le profil et les scores et on exclu la malbouffe
         df = self._filter_unhealthy_foods(self.df.copy())
         df = self._add_user_profile_features(df)
         df = self._calculate_personalized_scores(df)
 
-        # Trouver l’aliment de référence par rapport a food category
+        # Trouver l’aliment de référence par rapport a food category dans le dataset
         row = df[df['Food Category'].str.contains(food_name, case=False, na=False)]
         if row.empty:
             return []
 
+        # Récupère le modèle KNN pour les features, supprime les NaN et normalise les données
         features = joblib.load("models/knn_features.pkl")
         X = df[features].fillna(0)
         X_scaled = self.scaler.transform(X)
 
-        # Trouve les aliments les plus proches de l’aliment choisi (6)
+        # Trouve les aliments les plus proches de l’aliment choisi (6) fourni par l'user dans la barre de recherche
         _, indices = self.knn.kneighbors([X_scaled[row.index[0]]])
 
         recommendations = []
@@ -408,19 +421,19 @@ class NutriAI:
 
         return recommendations
 
-    # Arbre
-
+    # Arbre de décision
     def train_decision_tree_personalized(self):
         """
         Arbre qui utilise les paramètres du profil et des features adaptatives.
         """
+        # On récupère le profil et les scores et on exclu la malbouffe
         df = self._filter_unhealthy_foods(self.df.copy())
         df = self._add_user_profile_features(df)
         df = self._calculate_personalized_scores(df)
 
         target = self.user_profile
 
-        # Features adaptative basées sur le profil
+        # Features adaptative basées sur le profil selon le nombres de repas (6,6,6,4)
         protein_threshold = target['target_protein'] / 6
         carbs_threshold = target['target_carbs'] / 6
         fat_threshold = target['target_fat'] / 6
@@ -450,10 +463,11 @@ class NutriAI:
             'user_target_protein', 'user_target_calories'
         ]
 
+        # Remplace les NaN par 0
         X = df[features_tree].fillna(0)
-        y = df['role']
+        y = df['role'] # Privilégier, Modération, Neutre, Eviter
 
-        # Identifier les classes réellement présentes dans les données
+        # Identifier les classes réellement présentes dans les données (Privilégié, Modération...)
         present_classes = sorted(y.unique())
 
         #  Au moins 2 classes nécessaires pour un arbre
@@ -462,11 +476,12 @@ class NutriAI:
             print(f"   Les règles de classification sont trop strictes pour ce profil.")
             print(f"   L'arbre ne sera pas entraîné (nécessite au moins 2 classes).")
 
-            # Créer un arbre minimal pour compatibilité
+            # Créer un arbre minimal pour compatibilité, garantit que un objet modèle existe toujours même quand l’arbre “normal” est impossible
             from sklearn.dummy import DummyClassifier
             self.dt = DummyClassifier(strategy='most_frequent')
             self.dt.fit(X, y)
 
+            # Chargement de l'abre entrainé
             joblib.dump(self.dt, "models/decision_tree_personalized.pkl")
             joblib.dump(features_tree, "models/tree_features_personalized.pkl")
             joblib.dump(present_classes, "models/tree_classes.pkl")
@@ -503,7 +518,7 @@ class NutriAI:
             self.dt,
             feature_names=features_tree,
             class_names=present_classes,  # Utiliser classes présentes
-            max_depth=6
+            max_depth=6 # Max 6 niveaux
         )
 
         return rules_text

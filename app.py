@@ -26,11 +26,13 @@ with st.sidebar:
 
     col1, col2 = st.columns(2)
     with col1:
+        # Propositions par défauts
         weight = st.number_input("Poids (kg)", 40, 150, 70, 1)
         age = st.number_input("Âge", 16, 80, 30, 1)
         gender = st.selectbox("Sexe", ["Homme", "Femme"])
 
     with col2:
+        # Propositions par défauts
         height = st.number_input("Taille (cm)", 140, 220, 175, 1)
         activity = st.selectbox("Activité", [
             "Sédentaire", "Léger", "Modéré", "Intense", "Athlète"
@@ -86,6 +88,7 @@ if 'ai_ready' not in st.session_state:
     st.info("Configurez votre profil dans la barre latérale pour commencer")
     st.stop()
 
+# Définition des tabulations
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "Recommandations",
     "Plan de Repas",
@@ -98,11 +101,14 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 with tab1:
     st.header("Aliments Recommandés pour VOUS")
 
+    # Récupère le profil
     profile = st.session_state.profile
 
     col1, col2, col3 = st.columns(3)
+    # Affiche les objectifs
     col1.metric("Votre Objectif", f"{int(profile['target_calories'])} kcal/jour")
     col2.metric("Activité", profile['activity'])
+    # Calcul de l'IMC
     col3.metric("IMC", f"{weight / (height / 100) ** 2:.1f}")
 
     st.divider()
@@ -114,7 +120,7 @@ with tab1:
         horizontal=True
     )
 
-    # Calculer selon le user_score
+    # Séléctionne les meilleurs aliments depuis le user_score
     foods = ai.df[ai.df['role'] == role_filter].sort_values('user_score', ascending=False)
 
     if len(foods) == 0:
@@ -122,9 +128,10 @@ with tab1:
     else:
         st.subheader(f"{len(foods)} aliments à {role_filter}")
 
-        # Top 10
+        # Top 10, se base sur les 10 premiers meilleurs aliments depuis la variable foods
         for idx, (_, food) in enumerate(foods.head(10).iterrows(), 1):
             with st.expander(
+                    # Affichage
                     f"#{idx} **{food['Food Category']}** "
                     f"({food['Meal Type']}) - Score: {food['user_score']:.2f}"
             ):
@@ -134,6 +141,7 @@ with tab1:
                 col3.metric("Glucides", f"{food['Carbs']:.1f}g")
                 col4.metric("Lipides", f"{food['Fat']:.1f}g")
 
+                # Visualisation du score de pertinance des aliments
                 st.progress(food['user_score'], "Score de pertinence pour VOUS")
 
                 # Pourquoi cet aliment ?
@@ -156,9 +164,11 @@ with tab1:
 with tab2:
     st.header("Plan Nutritionnel Journalier Personnalisé")
 
+    # Récupère le profil
     profile = st.session_state.profile
 
     if st.button("Générer mon plan complet", type="primary"):
+        # Appel MealPlanner pour générer
         planner = MealPlanner(ai.df)
 
         target_macros = {
@@ -169,6 +179,7 @@ with tab2:
         }
 
         with st.spinner("Génération du plan optimal..."):
+            # Appel la fonction generate_daily de MealPlaner
             plan, totals = planner.generate_daily_plan_personalized(target_macros)
 
         st.success("Plan généré avec succès !")
@@ -256,15 +267,17 @@ with tab3:
     food_name = st.text_input("Rechercher un aliment", placeholder="Ex: poulet, riz, banane...")
 
     if food_name:
+        # Garde que les aliments qui ont Food Category
         matches = ai.df[ai.df['Food Category'].str.contains(food_name, case=False, na=False)]
 
         if matches.empty:
+            # Si l'élément recherché n'apparait pas dans le dataset
             st.warning("Aucun aliment trouvé. Essayez un autre terme.")
         else:
             # Prendre le meilleur match
             food = matches.sort_values('user_score', ascending=False).iloc[0]
 
-            # Header
+            # Les couleurs en fonction
             role_color = {
                 'Privilégier': 'green',
                 'Modération': 'orange',
@@ -293,8 +306,9 @@ with tab3:
             # Analyse de pertinence pour VOUS
             st.subheader("Pertinence pour votre profil")
 
+            # Récupère le profil
             profile = st.session_state.profile
-
+            # Comparaison de l'aliment par les ratios
             col1, col2 = st.columns(2)
 
             with col1:
@@ -324,9 +338,11 @@ with tab3:
             # Recommandations similaires
             st.subheader("Aliments Similaires Recommandés")
 
+            # On recherche via KNN les aliments similaires à celui indiqué
             similar = ai.recommend_similar_personalized(food['Food Category'])
 
             if similar:
+                # Affichage des 5 aliments similaires les plus pertinents
                 for sim in similar[:5]:
                     role_emoji = {
                         'Privilégier': '✅',
@@ -342,7 +358,7 @@ with tab3:
                         f"{sim['calories']:.0f} kcal, {sim['protein']:.0f}g protéines"
                     )
 
-# Arbre explicatif
+# Arbre de décision
 with tab4:
     st.header("Arbre de Décision Personnalisé")
 
@@ -350,6 +366,7 @@ with tab4:
         "Cet arbre est **unique à votre profil**. "
     )
 
+    # Récupère le profil
     profile = st.session_state.profile
 
     # Afficher tous les paramètres du profil utilisés
@@ -369,14 +386,17 @@ with tab4:
 
     # sert uniquement à donner un ordre de grandeur à l’utilisateur
     col1, col2, col3 = st.columns(3)
+    # 6 repas
     col1.metric("Protéines/repas", f"{profile['target_protein'] / 6:.0f}g")
     col2.metric("Glucides/repas", f"{profile['target_carbs'] / 6:.0f}g")
+    # 4 repas
     col3.metric("Calories/repas", f"{profile['target_calories'] / 4:.0f} kcal")
 
     st.divider()
 
     if os.path.exists("models/decision_tree_personalized.pkl"):
         try:
+            # Charge d'arbre de décision entrainé et la liste des features utilisées
             dt = joblib.load("models/decision_tree_personalized.pkl")
             features = joblib.load("models/tree_features_personalized.pkl")
 
@@ -391,7 +411,8 @@ with tab4:
 
             from sklearn.tree import export_text
 
-            # converti l'arbre en règles textuelles explicites
+            # converti l'arbre en règles textuelles explicites => Limite la profondeur de l'arbre à 5 niveaux (5 questions successives)
+            # évite le sur-apprentissage
             rules = export_text(dt, feature_names=features, class_names=tree_classes, max_depth=5)
             st.code(rules, language="text")
 
@@ -453,7 +474,7 @@ with tab5:
             with st.spinner("Évaluation en cours... Cela peut prendre plusieurs minutes."):
                 from model_evaluation import run_full_evaluation
 
-                # Lancer l'évaluation
+                # Lancer l'évaluation, on passe le dataset et le profil user
                 evaluator, comparison_df = run_full_evaluation(
                     ai.df,
                     st.session_state.profile
@@ -464,7 +485,7 @@ with tab5:
     else:
         st.success("Évaluation disponible")
 
-        #TABLEAU COMPARATIF
+        # Tableau comparatif
         st.subheader("Tableau Comparatif des Modèles")
 
         comparison_df = pd.read_csv("models/model_comparison.csv")
@@ -493,7 +514,7 @@ with tab5:
 
         st.divider()
 
-        # GRAPHIQUES DE PERFORMANCE
+        # Graphique de performances
         st.subheader("Visualisations des Performances")
 
         col1, col2 = st.columns(2)
@@ -506,7 +527,7 @@ with tab5:
 
         st.divider()
 
-        # MATRICES DE CONFUSION
+        # Matrices de confusion
         st.subheader("Matrices de Confusion")
 
         confusion_files = [
@@ -526,7 +547,7 @@ with tab5:
 
         st.divider()
 
-        # RAPPORT DÉTAILLÉ
+        # Rapport détaillé des modèles
         st.subheader("Rapport Détaillé")
 
         if os.path.exists("models/evaluation_report.txt"):
@@ -548,7 +569,7 @@ with tab5:
 
         st.divider()
 
-        # ANALYSE DES RÉSULTATS
+        # Analyse des résultats finaux
         st.subheader("Analyse des Résultats")
 
         col1, col2 = st.columns(2)
@@ -582,7 +603,7 @@ with tab5:
 
         st.divider()
 
-        # RE-ÉVALUATION
+        # Re-évaluation si changement des données
         st.subheader("Re-évaluation")
 
         col1, col2 = st.columns([3, 1])

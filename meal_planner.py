@@ -18,12 +18,13 @@ class MealPlanner:
         """
         Initialise avec un DataFrame déjà filtré et scoré par NutriAI.
         """
+        # Le dataset contient déja les résultats des modèles
         self.df = df.copy()
 
         # Filtrer aliments malsains
         self.df = self._filter_unhealthy()
 
-        # Catégories d'aliments par type de repas
+        # Catégories d'aliments par type de repas (pas utilisé, juste en dure au cas ou pour faciliter gestion)
         self.meal_categories = {
             "Petit-déjeuner": ["Grains", "Fruits", "Dairy", "Eggs"],
             "Déjeuner": ["Meat", "Fish", "Grains", "Vegetables", "Legumes", "Dairy"],
@@ -41,13 +42,6 @@ class MealPlanner:
     def generate_daily_plan_personalized(self, target_macros):
         """
         Génère un plan quotidien adapté aux objectifs nutritionnels.
-
-        Args:
-            target_macros: dict avec 'calories', 'protein', 'carbs', 'fat'
-
-        Returns:
-            plan: dict {meal_name: [foods]}
-            totals: dict avec totaux nutritionnels
         """
         plan = {}
         daily_totals = {"calories": 0, "protein": 0, "carbs": 0, "fat": 0}

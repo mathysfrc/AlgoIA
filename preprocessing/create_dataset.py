@@ -23,14 +23,14 @@ def smart_fill(df):
         9 * df.loc[missing_cal, "Fat"].fillna(0)
     )
 
-    # Si Fat manque → approx via Lipid saturated + 2×non-saturated
+    # Si Fat manque → Satured Fat * 1.3 et NaN remplacé par 0
     if "Saturated Fat" in df.columns:
         missing_fat = df["Fat"].isna()
         df.loc[missing_fat, "Fat"] = (
             df.loc[missing_fat, "Saturated Fat"].fillna(0) * 1.3
         )
 
-    # Si Carbs manque → approx via Sugar + Fiber + moyenne globale
+    # Si Carbs manque → Sucre + Fibre et si NaN on remplace par la moyenne
     if "Carbs" in df.columns and "Fiber" in df.columns and "Sugar" in df.columns:
         missing_carbs = df["Carbs"].isna()
         df.loc[missing_carbs, "Carbs"] = (
@@ -44,7 +44,7 @@ def smart_fill(df):
             lambda x: x if pd.notna(x) else random.choice(MEAL_TYPES)
         )
 
-
+    # Pour les colonnes numérique, chaque NaN est remplacé par la moyenne de la colonne
     df = df.fillna(df.mean(numeric_only=True))
 
     return df
@@ -54,6 +54,7 @@ df1 = pd.read_csv("../datasets/dataset1.csv")
 df2 = pd.read_csv("../datasets/dataset2.csv")
 df3 = pd.read_csv("../datasets/dataset3.csv")
 
+# On indique les colonnes que l'on veut et les similaires dans les datasets
 df1_norm = pd.DataFrame()
 df1_norm["Food Category"] = df1.get("food", None)
 df1_norm["Meal Type"] = None
@@ -99,10 +100,11 @@ df3_norm["Water"] = df3["Data.Water"]
 
 df3_norm = smart_fill(df3_norm)
 
+# On concatène les résultats des 3 datasets et on les combine avec les colonnes voulues
 combined = pd.concat([df1_norm, df2_norm, df3_norm], ignore_index=True)
 combined = combined[FINAL_COLUMNS]
 
-
+# Cela créé le fichier de dataset final
 combined.to_csv("../data/final_food.csv", index=False)
 
 print("Fichier généré : final_food.csv")

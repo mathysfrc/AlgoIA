@@ -3,15 +3,6 @@ import numpy as np
 
 
 def augment_dataset(df, target_size=1200):
-    """
-    Augmente le dataset en créant des variations réalistes des aliments existants.
-
-    Méthodes d'augmentation :
-    1. Variations de cuisson (cru, cuit, grillé, bouilli)
-    2. Variations de portions (petite, moyenne, grande)
-    3. Variations de préparation (nature, assaisonné, mariné)
-    """
-    print(f"\nAugmentation du dataset de {len(df)} → {target_size} lignes")
 
     augmented_rows = []
     current_size = len(df)

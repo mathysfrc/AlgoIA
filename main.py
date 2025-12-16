@@ -13,7 +13,7 @@ def train_for_profile(ai, weight, height, age, gender, activity, objective, prof
     print(f"ENTRAÎNEMENT POUR PROFIL: {profile_name}")
     print(f"{'=' * 60}")
 
-    # Configuration profil => models.py
+    # Configuration profil => models.py, on lui passe les datas
     profile = ai.set_user_profile(
         weight=weight,
         height=height,
@@ -69,7 +69,7 @@ if __name__ == "__main__":
         df.to_csv("data/processed_nutrition.csv", index=False)
     print(f"✓ Dataset nettoyé: {len(df)} lignes, {len(df.columns)} colonnes")
 
-    # Vérification conformité
+    # Vérification conformité du cours dans le PDF de Mr Hiard
     if len(df) < 1000:
         print(f"ATTENTION: Dataset < 1000 lignes ({len(df)} lignes)")
     if len(df.columns) < 10:
@@ -81,7 +81,7 @@ if __name__ == "__main__":
 
     print("\nEntraînement pour TOUS les profils Homme / Femme...")
 
-    # Profils de référence
+    # Profils de référence générique
     genders = {
         "Homme": {
             "weight": 80,
@@ -142,11 +142,6 @@ if __name__ == "__main__":
         print(f"  Objectif: {int(r['result']['target_calories'])} kcal")
         print(f"  Protéines: {int(r['result']['target_protein'])}g")
 
-    # 5. ÉVALUATION COMPLÈTE DES MODÈLES
-    print("\n" + "=" * 60)
-    print("ÉVALUATION COMPLÈTE DES MODÈLES")
-    print("=" * 60)
-
     # Utiliser le dernier profil pour l'évaluation
     last_profile = results[-1]['result']
 
@@ -160,7 +155,7 @@ if __name__ == "__main__":
         evaluator, comparison_df = run_full_evaluation(ai.df, last_profile)
 
         print("\n" + "=" * 60)
-        print(" ÉVALUATION TERMINÉE AVEC SUCCÈS")
+        print(" Évaluation terminée")
         print("=" * 60)
         print("\n Résultats de comparaison:")
         print(comparison_df.to_string(index=False))
@@ -169,10 +164,6 @@ if __name__ == "__main__":
         print(f"\n Erreur lors de l'évaluation: {e}")
         print("   L'entraînement de base a réussi, mais l'évaluation comparative a échoué.")
 
-    # 6. Test de recommandations
-    print("\n" + "=" * 60)
-    print(" TEST DES RECOMMANDATIONS")
-    print("=" * 60)
 
     # Tester pour le dernier profil
     last_profile_name = results[-1]['name']
@@ -180,26 +171,17 @@ if __name__ == "__main__":
 
     # Aliments privilégiés
     privileged = ai.df[ai.df['role'] == 'Privilégier'].head(5)
-    print("\n Top 5 aliments à PRIVILÉGIER:")
+    print("\n Top 5 aliments à privilégier:")
     for idx, (_, food) in enumerate(privileged.iterrows(), 1):
         print(f"  {idx}. {food['Food Category']} - Score: {food['user_score']:.2f}")
 
     # Aliments à éviter
     avoid = ai.df[ai.df['role'] == 'Éviter'].head(5)
-    print("\n Top 5 aliments à ÉVITER:")
+    print("\n Top 5 aliments à éviter:")
     for idx, (_, food) in enumerate(avoid.iterrows(), 1):
         print(f"  {idx}. {food['Food Category']} - Score: {food['user_score']:.2f}")
 
     print("\n" + "=" * 60)
     print("=" * 60)
-    print("\nFichiers générés:")
-    print("   - data/processed_nutrition.csv (dataset nettoyé)")
-    print("   - models/knn_personalized.pkl (modèle KNN)")
-    print("   - models/decision_tree_personalized.pkl (arbre de décision)")
-    print("   - models/model_comparison.csv (comparaison des modèles)")
-    print("   - models/confusion_*.png (matrices de confusion par modèle)")
-    print("   - models/f1_comparison.png (graphique de comparaison)")
-    print("   - models/evaluation_report.txt (rapport détaillé)")
-    print("\n Lancez l'application avec:")
     print("   streamlit run app.py")
     print("=" * 60)

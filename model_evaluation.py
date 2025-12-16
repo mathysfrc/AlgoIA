@@ -36,7 +36,6 @@ class ModelEvaluator:
         return max(2, min(max_cv, min_class_size))
 
    # Préparation des données
-
     def prepare_data(self):
         """Nettoyage, filtrage et normalisation"""
 
@@ -62,33 +61,38 @@ class ModelEvaluator:
             'user_target_carbs', 'user_target_calories'
         ]
 
+        # Séparation X, Y
         X = df_filtered[features].fillna(0)
         y = df_filtered['role']
 
+        # Encode les rôles (Privilégier...)
         y_encoded = self.label_encoder.fit_transform(y)
 
-        # Sécurisation du split
+        # Sécurisation du split, taille de la classe la plus rare
         min_class_size = min(Counter(y_encoded).values())
 
         X_train, X_test, y_train, y_test = train_test_split(
-            X, y_encoded,
+            X, y_encoded, # X ce que le modèle voit, y ce qu'il doit prédire
+            # 80/20 learning/test
             test_size=0.2,
             random_state=42,
+            # force le split à garder les mêmes proportions de classes dans train et test uniquement si +2 classes
             stratify=y_encoded if min_class_size >= 2 else None
         )
 
+        # Scaling : Met toutes les features sur une échelle comparable
         X_train = self.scaler.fit_transform(X_train)
         X_test = self.scaler.transform(X_test)
 
         return X_train, X_test, y_train, y_test
 
     # fine tunning des modèles
-
     # cherche la meilleure configuration possible de l’arbre afin d’avoir de meilleures prédictions et moins d’overfitting
     def tune_decision_tree(self, X, y):
         print("\nTuning Decision Tree...")
 
         param_grid = {
+            # Plusieurs choix
             'max_depth': [5, 10, 15],
             'min_samples_split': [2, 10],
             'min_samples_leaf': [5, 15],
@@ -186,6 +190,7 @@ class ModelEvaluator:
         }
 
         model = GradientBoostingClassifier(random_state=42)
+        # Max 3 fold pour la validation croisée
         cv_folds = self._get_safe_cv(y, max_cv=3)
 
         gs = GridSearchCV(
@@ -203,6 +208,7 @@ class ModelEvaluator:
 
     # évaluation
     def evaluate_model(self, model, X_test, y_test, name):
+        # Après le résultats de l'entrainement on évalue les modèles sur les mêmes datas
         start = time.time()
         y_pred = model.predict(X_test)
         inference_time = time.time() - start
@@ -313,7 +319,7 @@ class ModelEvaluator:
         print("Meilleurs modèles sauvegardés")
 
 
-# Point d'entrée
+# Point d'entrée => appelé lors d'une demande de re-évaluation dans app.py
 def run_full_evaluation(df, user_profile):
     print("\n=== Démarrage Évaluation Accélérée ===")
 

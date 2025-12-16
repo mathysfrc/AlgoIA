@@ -1,0 +1,36 @@
+=== ÉVALUATION SANS DATA LEAKAGE ===
+
+Features exclues: protein_fit, carbs_fit, fat_fit, calorie_fit, user_score
+
+
+=== Decision Tree ===
+           Modération  Neutre  accuracy  macro avg  weighted avg
+precision         1.0     1.0       1.0        1.0           1.0
+recall            1.0     1.0       1.0        1.0           1.0
+f1-score          1.0     1.0       1.0        1.0           1.0
+support        3692.0     9.0       1.0     3701.0        3701.0
+
+
+=== Random Forest ===
+           Modération  Neutre  accuracy  macro avg  weighted avg
+precision         1.0     1.0       1.0        1.0           1.0
+recall            1.0     1.0       1.0        1.0           1.0
+f1-score          1.0     1.0       1.0        1.0           1.0
+support        3692.0     9.0       1.0     3701.0        3701.0
+
+
+=== KNN ===
+            Modération    Neutre  accuracy    macro avg  weighted avg
+precision     0.999458  0.875000  0.999189     0.937229      0.999156
+recall        0.999729  0.777778  0.999189     0.888753      0.999189
+f1-score      0.999594  0.823529  0.999189     0.911562      0.999166
+support    3692.000000  9.000000  0.999189  3701.000000   3701.000000
+
+
+=== Gradient Boosting ===
+           Modération  Neutre  accuracy  macro avg  weighted avg
+precision         1.0     1.0       1.0        1.0           1.0
+recall            1.0     1.0       1.0        1.0           1.0
+f1-score          1.0     1.0       1.0        1.0           1.0
+support        3692.0     9.0       1.0     3701.0        3701.0
+
