@@ -130,7 +130,7 @@ def add_noise_to_dataset(input_path="data/processed_nutrition.csv",
 
     # Charger le dataset
     if not os.path.exists(input_path):
-        print(f"❌ Fichier non trouvé: {input_path}")
+        print(f"Fichier non trouvé: {input_path}")
         return None
     
     df = pd.read_csv(input_path)
@@ -208,6 +208,7 @@ if __name__ == "__main__":
         missing_prob=args.missing,
         random_seed=args.seed
     )
+
 
 
 
