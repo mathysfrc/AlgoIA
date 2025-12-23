@@ -44,6 +44,17 @@ with st.sidebar:
         ], format_func=lambda x: x[1])
 
     st.divider()
+    
+    # Choix de la méthode de classification
+    st.subheader("Méthode de Classification")
+    classification_method = st.radio(
+        "Choisissez la méthode pour classer les aliments :",
+        ["Règles conditionnelles", "Arbre de décision"],
+        help="Règles conditionnelles : règles définies manuellement selon votre objectif.\n"
+             "Arbre de décision : modèle ML qui apprend automatiquement les patterns.",
+        index=0
+    )
+    use_tree = classification_method == "Arbre de décision"
 
     # ai. -> on appel main pour effectuer les calculs
     if st.button("Calculer mes besoins personnalisés", type="primary"):
@@ -60,19 +71,24 @@ with st.sidebar:
 
             # Une fois le profil set, on lance tous les calculs pour configurer le profil
 
-            # Classification
-            ai.classify_food_role_personalized()
+            # Classification initiale avec règles conditionnelles (nécessaire pour créer la colonne 'role')
+            ai.classify_food_role_personalized(use_tree=False)
+
+            # Entraînement arbre (s'entraîne sur les rôles créés ci-dessus)
+            ai.train_decision_tree_personalized()
+
+            # Re-classification avec la méthode choisie par l'utilisateur
+            if use_tree:
+                ai.classify_food_role_personalized(use_tree=True)
 
             # Entraînement KNN
             ai.train_knn_personalized()
 
-            # Entraînement arbre
-            ai.train_decision_tree_personalized()
-
             st.session_state.profile = profile
             st.session_state.ai_ready = True
+            st.session_state.classification_method = classification_method
 
-        st.success("Profil configuré !")
+        st.success(f"Profil configuré avec la méthode : {classification_method} !")
 
         # Affichage des besoins
         st.metric("TDEE", f"{int(profile['tdee'])} kcal")
@@ -103,6 +119,11 @@ with tab1:
 
     # Récupère le profil
     profile = st.session_state.profile
+    
+    # Afficher la méthode de classification utilisée
+    method = st.session_state.get('classification_method', 'Règles conditionnelles')
+    method_emoji = "🌳" if method == "Arbre de décision" else "📋"
+    st.info(f"{method_emoji} **Méthode de classification :** {method}")
 
     col1, col2, col3 = st.columns(3)
     # Affiche les objectifs

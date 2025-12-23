@@ -23,17 +23,17 @@ def train_for_profile(ai, weight, height, age, gender, activity, objective, prof
         objective=objective
     )
 
-    # Classification => models.py
-    print("\n1. Classification des rôles alimentaires...")
-    ai.classify_food_role_personalized()
+    # Classification => models.py (doit être fait en premier pour créer la colonne 'role')
+    print("\n1. Classification des rôles alimentaires (règles conditionnelles)...")
+    ai.classify_food_role_personalized(use_tree=False)
+
+    # Arbre de décision => models.py (s'entraîne sur les rôles créés par la classification)
+    print("\n2. Entraînement de l'arbre de décision...")
+    rules = ai.train_decision_tree_personalized()
 
     # KNN => models.py
-    print("\n2. Entraînement KNN personnalisé...")
+    print("\n3. Entraînement KNN personnalisé...")
     ai.train_knn_personalized()
-
-    # Arbre de décision => models.py
-    print("\n3. Entraînement de l'arbre de décision...")
-    rules = ai.train_decision_tree_personalized()
 
     print("\nEntraînement terminé pour ce profil!")
     print(f"   TDEE: {int(profile['tdee'])} kcal")

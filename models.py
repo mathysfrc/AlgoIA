@@ -269,8 +269,13 @@ class NutriAI:
         return df
 
    # Classification
-    def classify_food_role_personalized(self):
-        # Classification avec seuils dynamiques
+    def classify_food_role_personalized(self, use_tree=False):
+        """
+        Classification des rôles alimentaires.
+        
+        Args:
+            use_tree (bool): Si True, utilise l'arbre de décision. Si False, utilise les règles conditionnelles.
+        """
         # On récupère le profil et les scores et on exclu la malbouffe
         df = self._filter_unhealthy_foods(self.df.copy())
         df = self._add_user_profile_features(df)
@@ -284,69 +289,130 @@ class NutriAI:
         fat_threshold = target['target_fat'] / 6
         cal_threshold = target['target_calories'] / 4
 
-        # Défini les règles pour chaque objectif
-        if target['objective'] == 'perte':
-            conditions = [
-                # Privilégier
-                (df['Protein'] >= protein_threshold * 0.8) &
-                (df['Calories'] <= cal_threshold * 1.2) &
-                (df['Fiber'] >= 3) &
-                (df['Sugar'] <= 8),
+        if use_tree:
+            # Classification via arbre de décision
+            if not os.path.exists("models/decision_tree_personalized.pkl"):
+                print("Arbre de décision non trouvé. Utilisation des règles conditionnelles par défaut.")
+                use_tree = False
+            else:
+                try:
+                    # Préparer les features pour l'arbre (comme dans train_decision_tree_personalized)
+                    df['meets_protein_need'] = (df['Protein'] >= protein_threshold * 0.8).astype(int)
+                    df['meets_carbs_need'] = (df['Carbs'] >= carbs_threshold * 0.8).astype(int)
+                    df['within_calorie_target'] = (
+                        (df['Calories'] >= cal_threshold * 0.7) &
+                        (df['Calories'] <= cal_threshold * 1.3)
+                    ).astype(int)
+                    df['low_sugar'] = (df['Sugar'] < 10).astype(int)
+                    df['high_fiber'] = (df['Fiber'] > 4).astype(int)
+                    df['healthy_fat_ratio'] = ((df['Fat'] >= fat_threshold * 0.5) &
+                                               (df['Fat'] <= fat_threshold * 1.5)).astype(int)
 
-                # Modération
-                (df['Fat'] > fat_threshold * 1.5) |
-                ((df['Sugar'] > 8) & (df['Sugar'] <= 15)),
+                    # Charger l'arbre et les features
+                    dt = joblib.load("models/decision_tree_personalized.pkl")
+                    features_tree = joblib.load("models/tree_features_personalized.pkl")
+                    
+                    # Charger le label encoder si disponible
+                    if os.path.exists("models/label_encoder.pkl"):
+                        label_encoder = joblib.load("models/label_encoder.pkl")
+                    else:
+                        label_encoder = None
 
-                # éviter
-                (df['Calories'] > cal_threshold * 1.8) |
-                (df['Sugar'] > 15) |
-                (df['Fat'] > fat_threshold * 2)
-            ]
+                    # Préparer les données
+                    X = df[features_tree].fillna(0)
+                    
+                    # Prédire les rôles
+                    y_pred_encoded = dt.predict(X)
+                    
+                    # Décoder si nécessaire
+                    if label_encoder:
+                        df['role'] = label_encoder.inverse_transform(y_pred_encoded)
+                    else:
+                        # Utiliser les classes directement
+                        if os.path.exists("models/tree_classes.pkl"):
+                            tree_classes = joblib.load("models/tree_classes.pkl")
+                            df['role'] = [tree_classes[int(pred)] for pred in y_pred_encoded]
+                        else:
+                            df['role'] = [self.class_order[int(pred)] for pred in y_pred_encoded]
+                    
+                    print(f"✓ Classification via arbre de décision :")
+                    for role in self.class_order:
+                        count = len(df[df['role'] == role])
+                        pct = count / len(df) * 100
+                        print(f"  {role}: {count} ({pct:.1f}%)")
+                    
+                    self.df = df
+                    return df
+                    
+                except Exception as e:
+                    print(f"Erreur lors de l'utilisation de l'arbre: {e}")
+                    print("   Utilisation des règles conditionnelles par défaut.")
+                    use_tree = False
 
-        elif target['objective'] == 'gain':
-            conditions = [
-                # Privilégier
-                (df['Calories'] >= cal_threshold * 1.2) &
-                (df['Protein'] >= protein_threshold * 0.7) &
-                (df['Carbs'] >= carbs_threshold * 0.8),
+        if not use_tree:
+            # Classification via règles conditionnelles (méthode originale)
+            # Défini les règles pour chaque objectif
+            if target['objective'] == 'perte':
+                conditions = [
+                    # Privilégier
+                    (df['Protein'] >= protein_threshold * 0.8) &
+                    (df['Calories'] <= cal_threshold * 1.2) &
+                    (df['Fiber'] >= 3) &
+                    (df['Sugar'] <= 8),
 
-                # Modération
-                (df['Calories'] < cal_threshold * 0.8),
+                    # Modération
+                    (df['Fat'] > fat_threshold * 1.5) |
+                    ((df['Sugar'] > 8) & (df['Sugar'] <= 15)),
 
-                # éviter
-                (df['Sugar'] > 20) & (df['Protein'] < protein_threshold * 0.5)
-            ]
+                    # éviter
+                    (df['Calories'] > cal_threshold * 1.8) |
+                    (df['Sugar'] > 15) |
+                    (df['Fat'] > fat_threshold * 2)
+                ]
 
-        else:  # maintien
-            conditions = [
-                # Privilégier
-                (df['Protein'] >= protein_threshold * 0.7) &
-                (df['Protein'] <= protein_threshold * 1.3) &
-                (df['Calories'] >= cal_threshold * 0.8) &
-                (df['Calories'] <= cal_threshold * 1.2),
+            elif target['objective'] == 'gain':
+                conditions = [
+                    # Privilégier
+                    (df['Calories'] >= cal_threshold * 1.2) &
+                    (df['Protein'] >= protein_threshold * 0.7) &
+                    (df['Carbs'] >= carbs_threshold * 0.8),
 
-                # Modération
-                (df['Fat'] > fat_threshold * 1.5) |
-                (df['Sugar'] > 12),
+                    # Modération
+                    (df['Calories'] < cal_threshold * 0.8),
 
-                # éviter
-                (df['Calories'] > cal_threshold * 2) |
-                (df['Sugar'] > 20)
-            ]
+                    # éviter
+                    (df['Sugar'] > 20) & (df['Protein'] < protein_threshold * 0.5)
+                ]
 
-        # Classification via choix de seuils
-        choices = ['Privilégier', 'Modération', 'Éviter']
-        df['role'] = np.select(conditions, choices, default='Neutre')
+            else:  # maintien
+                conditions = [
+                    # Privilégier
+                    (df['Protein'] >= protein_threshold * 0.7) &
+                    (df['Protein'] <= protein_threshold * 1.3) &
+                    (df['Calories'] >= cal_threshold * 0.8) &
+                    (df['Calories'] <= cal_threshold * 1.2),
+
+                    # Modération
+                    (df['Fat'] > fat_threshold * 1.5) |
+                    (df['Sugar'] > 12),
+
+                    # éviter
+                    (df['Calories'] > cal_threshold * 2) |
+                    (df['Sugar'] > 20)
+                ]
+
+            # Classification via choix de seuils
+            choices = ['Privilégier', 'Modération', 'Éviter']
+            df['role'] = np.select(conditions, choices, default='Neutre')
+
+            print(f"✓ Classification via règles conditionnelles :")
+            # Calcul le %  d'aliment ayant un des rôles
+            for role in self.class_order:
+                count = len(df[df['role'] == role])
+                pct = count / len(df) * 100
+                print(f"  {role}: {count} ({pct:.1f}%)")
 
         self.df = df
-
-        print(f"✓ Classification personnalisée :")
-        # Calcul le %  d'aliment ayant un des rôles
-        for role in self.class_order:
-            count = len(df[df['role'] == role])
-            pct = count / len(df) * 100
-            print(f"  {role}: {count} ({pct:.1f}%)")
-
         return df
 
    # KN
