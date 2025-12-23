@@ -9,9 +9,10 @@ class MealPlanner:
 
     # Blacklist d'aliments malsains
     UNHEALTHY_KEYWORDS = [
-        'mcdo', 'mcdonald', 'burger king', 'kfc', 'pizza hut',
-        'fast food', 'soda', 'coca', 'pepsi', 'candy', 'bonbon',
-        'nuggets', 'fries', 'frites', 'donut'
+        'mcdonalds', 'burger king', 'kfc', 'pizza hut', 'dominos',
+        'fast food', 'soda', 'coke', 'pepsi', 'fanta', 'sprite',
+        'chips', 'doritos', 'cheetos', 'candy', 'sweets', 'industrial chocolate',
+        'nuggets', 'fries', 'donut', 'industrial croissant'
     ]
 
     def __init__(self, df):

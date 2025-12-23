@@ -343,6 +343,7 @@ with tab3:
 
             if similar:
                 # Affichage des 5 aliments similaires les plus pertinents
+                st.info(f"🔍 {len(similar)} aliments nutritionnellement similaires trouvés")
                 for sim in similar[:5]:
                     role_emoji = {
                         'Privilégier': '✅',
@@ -351,12 +352,30 @@ with tab3:
                         'Éviter': '❌'
                     }.get(sim['role'], '•')
 
+                    # Calculer les différences avec l'aliment de référence
+                    cal_diff = abs(sim['calories'] - food['Calories'])
+                    prot_diff = abs(sim['protein'] - food['Protein'])
+                    
                     st.markdown(
                         f"{role_emoji} **{sim['name']}** - "
                         f"{sim['role']} | "
-                        f"Score: {sim['user_score']:.2f} | "
-                        f"{sim['calories']:.0f} kcal, {sim['protein']:.0f}g protéines"
+                        f"Score: {sim['user_score']:.2f}"
                     )
+                    # Afficher les valeurs nutritionnelles avec comparaison
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        diff_cal = sim['calories'] - food['Calories']
+                        st.metric("Calories", f"{sim['calories']:.0f}", f"{diff_cal:+.0f}")
+                    with col2:
+                        diff_prot = sim['protein'] - food['Protein']
+                        st.metric("Protéines", f"{sim['protein']:.1f}g", f"{diff_prot:+.1f}g")
+                    with col3:
+                        diff_carbs = sim.get('carbs', 0) - food['Carbs']
+                        st.metric("Glucides", f"{sim.get('carbs', 0):.1f}g", f"{diff_carbs:+.1f}g")
+                    with col4:
+                        diff_fat = sim.get('fat', 0) - food['Fat']
+                        st.metric("Lipides", f"{sim.get('fat', 0):.1f}g", f"{diff_fat:+.1f}g")
+                    st.divider()
 
 # Arbre de décision
 with tab4:

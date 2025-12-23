@@ -14,10 +14,10 @@ class NutriAI:
     """
 
     UNHEALTHY_BLACKLIST = [
-        'mcdo', 'mcdonald', 'burger king', 'kfc', 'pizza hut', 'domino',
-        'fast food', 'soda', 'coca', 'pepsi', 'fanta', 'sprite',
-        'chips', 'doritos', 'cheetos', 'candy', 'bonbon', 'chocolat industriel',
-        'nuggets', 'fries', 'frites', 'donut', 'croissant industriel'
+        'mcdonalds', 'burger king', 'kfc', 'pizza hut', 'dominos',
+        'fast food', 'soda', 'coke', 'pepsi', 'fanta', 'sprite',
+        'chips', 'doritos', 'cheetos', 'candy', 'sweets', 'industrial chocolate',
+        'nuggets', 'fries', 'donut', 'industrial croissant'
     ]
 
     def __init__(self, data_path="data/processed_nutrition.csv"):
@@ -388,35 +388,93 @@ class NutriAI:
         print(f"✓ KNN entraîné avec {len(features)} features incluant profil complet")
 
     def recommend_similar_personalized(self, food_name):
-        """Recommandations basées sur profil ET similarité"""
+        """Recommandations basées sur similarité nutritionnelle (calories, protéines, glucides, lipides)"""
         # On récupère le profil et les scores et on exclu la malbouffe
         df = self._filter_unhealthy_foods(self.df.copy())
         df = self._add_user_profile_features(df)
         df = self._calculate_personalized_scores(df)
 
-        # Trouver l’aliment de référence par rapport a food category dans le dataset
+        # Trouver l'aliment de référence par rapport a food category dans le dataset
         row = df[df['Food Category'].str.contains(food_name, case=False, na=False)]
         if row.empty:
             return []
 
-        # Récupère le modèle KNN pour les features, supprime les NaN et normalise les données
-        features = joblib.load("models/knn_features.pkl")
-        X = df[features].fillna(0)
-        X_scaled = self.scaler.transform(X)
+        # Récupérer les valeurs nutritionnelles de l'aliment de référence
+        ref_food = row.iloc[0]
+        ref_calories = ref_food['Calories']
+        ref_protein = ref_food['Protein']
+        ref_carbs = ref_food['Carbs']
+        ref_fat = ref_food['Fat']
+        ref_fiber = ref_food.get('Fiber', 0)
+        ref_sugar = ref_food.get('Sugar', 0)
 
-        # Trouve les aliments les plus proches de l’aliment choisi (6) fourni par l'user dans la barre de recherche
-        _, indices = self.knn.kneighbors([X_scaled[row.index[0]]])
+        # Calculer la distance nutritionnelle pour chaque aliment
+        # On donne des poids plus importants aux macronutriments principaux
+        distances = []
+        seen_names = set()  # Pour éviter les doublons
+        
+        for idx, food in df.iterrows():
+            # Ignorer l'aliment de référence lui-même
+            if idx == row.index[0]:
+                continue
+            
+            # Ignorer les doublons (même nom d'aliment)
+            food_name_clean = food['Food Category'].strip().lower()
+            if food_name_clean in seen_names:
+                continue
+            seen_names.add(food_name_clean)
 
+            # Calculer distance pondérée basée sur les valeurs nutritionnelles
+            # Utiliser des différences absolues normalisées pour une meilleure similarité
+            # Poids : Calories (1.5), Protéines (2.5), Glucides (1.5), Lipides (2.0), Fibres (0.3), Sucres (0.3)
+            
+            # Normalisation : utiliser le max entre référence et aliment pour éviter division par 0
+            cal_norm = max(ref_calories, food['Calories'], 1)
+            prot_norm = max(ref_protein, food['Protein'], 1)
+            carbs_norm = max(ref_carbs, food['Carbs'], 1)
+            fat_norm = max(ref_fat, food['Fat'], 1)
+            fiber_norm = max(ref_fiber, food.get('Fiber', 0), 1) if ref_fiber > 0 or food.get('Fiber', 0) > 0 else 1
+            sugar_norm = max(ref_sugar, food.get('Sugar', 0), 1) if ref_sugar > 0 or food.get('Sugar', 0) > 0 else 1
+
+            cal_diff = abs(food['Calories'] - ref_calories) / cal_norm
+            prot_diff = abs(food['Protein'] - ref_protein) / prot_norm
+            carbs_diff = abs(food['Carbs'] - ref_carbs) / carbs_norm
+            fat_diff = abs(food['Fat'] - ref_fat) / fat_norm
+            fiber_diff = abs(food.get('Fiber', 0) - ref_fiber) / fiber_norm
+            sugar_diff = abs(food.get('Sugar', 0) - ref_sugar) / sugar_norm
+
+            # Distance pondérée (plus le score est bas, plus c'est similaire)
+            # Augmenter les poids pour protéines et lipides car ce sont des indicateurs clés
+            distance = (
+                cal_diff * 1.5 +
+                prot_diff * 2.5 +  # Protéines très importantes
+                carbs_diff * 1.5 +
+                fat_diff * 2.0 +   # Lipides aussi importants
+                fiber_diff * 0.3 +
+                sugar_diff * 0.3
+            )
+
+            distances.append({
+                'idx': idx,
+                'distance': distance,
+                'food': food
+            })
+
+        # Trier par distance (plus proche = plus similaire nutritionnellement)
+        distances.sort(key=lambda x: x['distance'])
+
+        # Prendre les 6 plus proches (ou moins si pas assez d'aliments)
         recommendations = []
-        for idx in indices[0][1:]:
-            food = df.iloc[idx]
-            # Renvoie ces infos pour chaque voisin
+        for item in distances[:6]:
+            food = item['food']
             recommendations.append({
                 'name': food['Food Category'],
                 'role': food['role'],
                 'user_score': food['user_score'],
                 'calories': food['Calories'],
-                'protein': food['Protein']
+                'protein': food['Protein'],
+                'carbs': food.get('Carbs', 0),
+                'fat': food.get('Fat', 0)
             })
 
         return recommendations
@@ -477,6 +535,7 @@ class NutriAI:
             print(f"   L'arbre ne sera pas entraîné (nécessite au moins 2 classes).")
 
             # Créer un arbre minimal pour compatibilité, garantit que un objet modèle existe toujours même quand l’arbre “normal” est impossible
+            # En cas d'une seule classe car règles strict, le modèle plante pas
             from sklearn.dummy import DummyClassifier
             self.dt = DummyClassifier(strategy='most_frequent')
             self.dt.fit(X, y)
@@ -514,6 +573,7 @@ class NutriAI:
         print(f"  Classes présentes dans ce profil: {', '.join(present_classes)}")
 
         # Retourner règles avec classes RÉELLEMENT présentes
+        # Une photo instantanée des règles
         rules_text = export_text(
             self.dt,
             feature_names=features_tree,
@@ -538,6 +598,7 @@ class NutriAI:
             # Fallback sur l'ordre par défaut si fichier absent
             class_names = self.class_order
 
+        # Les règles du modèle réellement utilisé
         return export_text(
             dt,
             feature_names=features,

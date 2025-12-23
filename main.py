@@ -69,7 +69,7 @@ if __name__ == "__main__":
         df.to_csv("data/processed_nutrition.csv", index=False)
     print(f"✓ Dataset nettoyé: {len(df)} lignes, {len(df.columns)} colonnes")
 
-    # Vérification conformité du cours dans le PDF de Mr Hiard
+    # Vérification conformité
     if len(df) < 1000:
         print(f"ATTENTION: Dataset < 1000 lignes ({len(df)} lignes)")
     if len(df.columns) < 10:
