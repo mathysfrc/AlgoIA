@@ -331,8 +331,10 @@ class NutriAI:
                         # Utiliser les classes directement
                         if os.path.exists("models/tree_classes.pkl"):
                             tree_classes = joblib.load("models/tree_classes.pkl")
+                            # On modifie le role par rapport aux règles de l'arbre
                             df['role'] = [tree_classes[int(pred)] for pred in y_pred_encoded]
                         else:
+                            # On modifie le role par rapport aux règles de classification
                             df['role'] = [self.class_order[int(pred)] for pred in y_pred_encoded]
                     
                     print(f"✓ Classification via arbre de décision :")
@@ -640,6 +642,8 @@ class NutriAI:
 
         # Retourner règles avec classes RÉELLEMENT présentes
         # Une photo instantanée des règles
+        # Les règles de l’arbre qui vient juste d’être entraîné, en mémoire
+        # Utilisée en debug
         rules_text = export_text(
             self.dt,
             feature_names=features_tree,

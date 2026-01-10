@@ -59,7 +59,7 @@ if __name__ == "__main__":
 
     # 1. Nettoyage du dataset => models.py
     print("\nChargement et nettoyage du dataset...")
-    if os.path.exists("data/processed_nutrition.csv"):
+    if os.path.exists("data/processed_nutrition_noisy.csv"):
         print("Dataset déjà traité trouvé, utilisation sans écraser")
         df = pd.read_csv('data/processed_nutrition_noisy.csv')
     else:

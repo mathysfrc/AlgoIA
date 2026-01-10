@@ -93,7 +93,12 @@ def enrich_with_profiles(df):
     # Par exemple, avocat : bon pour prise de masse mais modéré pour perte
     augmented_rows = []
     for _, row in df.iterrows():
-        # 4 fois car 4 profiles
+        # 4 fois car 4 profiles : 4 ligne pour un aliment
+        #Food	Calories	Fat	     profil	  activity_factor	objective
+        #Avocat	  160	      15	sedentaire       1.2	       perte
+        #Avocat   160	      15	modere           1.55	      maintien
+        #Avocat	  160	      15	intense	         1.725	        gain
+        #Avocat	  160	      15	athlete	         1.9            gain
         for p in profiles:
             r = row.copy()
             r["profil"] = p["profil"]
